@@ -54,6 +54,35 @@ volatile uint8_t spi_xmit_flag = 0;
 volatile uint8_t spi_recv_flag = 0;
 volatile uint8_t spi_txrx_flag = 0;
 volatile uint8_t spi_err_flag = 0;
+
+static volatile uint16_t gLastError;
+
+L6474_Init_t gL6474InitParams =
+{
+   160,                               /// Acceleration rate in step/s2. Range: (0..+inf).
+   160,                               /// Deceleration rate in step/s2. Range: (0..+inf).
+   1600,                              /// Maximum speed in step/s. Range: (30..10000].
+   800,                               ///Minimum speed in step/s. Range: [30..10000).
+   250,                               ///Torque regulation current in mA. (TVAL register) Range: 31.25mA to 4000mA.
+   750,                               ///Overcurrent threshold (OCD_TH register). Range: 375mA to 6000mA.
+   L6474_CONFIG_OC_SD_ENABLE,         ///Overcurrent shutwdown (OC_SD field of CONFIG register).
+   L6474_CONFIG_EN_TQREG_TVAL_USED,   /// Torque regulation method (EN_TQREG field of CONFIG register).
+   L6474_STEP_SEL_1_16,               /// Step selection (STEP_SEL field of STEP_MODE register).
+   L6474_SYNC_SEL_1_2,                /// Sync selection (SYNC_SEL field of STEP_MODE register).
+   L6474_FAST_STEP_12us,              /// Fall time value (T_FAST field of T_FAST register). Range: 2us to 32us.
+   L6474_TOFF_FAST_8us,               /// Maximum fast decay time (T_OFF field of T_FAST register). Range: 2us to 32us.
+   3,                                 /// Minimum ON time in us (TON_MIN register). Range: 0.5us to 64us.
+   21,                                /// Minimum OFF time in us (TOFF_MIN register). Range: 0.5us to 64us.
+   L6474_CONFIG_TOFF_044us,           /// Target Swicthing Period (field TOFF of CONFIG register).
+   L6474_CONFIG_SR_320V_us,           /// Slew rate (POW_SR field of CONFIG register).
+   L6474_CONFIG_INT_16MHZ,            /// Clock setting (OSC_CLK_SEL field of CONFIG register).
+   (L6474_ALARM_EN_OVERCURRENT      |
+    L6474_ALARM_EN_THERMAL_SHUTDOWN |
+    L6474_ALARM_EN_THERMAL_WARNING  |
+    L6474_ALARM_EN_UNDERVOLTAGE     |
+    L6474_ALARM_EN_SW_TURN_ON       |
+    L6474_ALARM_EN_WRONG_NPERF_CMD)    /// Alarm (ALARM_EN register).
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -64,6 +93,7 @@ static void MX_SPI3_Init(void);
 static void MX_TIM3_Init(void);
 /* USER CODE BEGIN PFP */
 int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim3);
+static void MyFlagInterruptHandler(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -94,6 +124,9 @@ int main(void)
   uint32_t err_cnt = 0;
   uint32_t buf_iter = 0;
 
+  int32_t pos;
+  uint16_t mySpeed;
+
   for(int i=0;i<SPI_BUFFER_SIZE;i++)
   {
 	  spi_rx_buf[i]=0;
@@ -116,6 +149,28 @@ int main(void)
   SystemClock_Config();
 
   /* USER CODE BEGIN SysInit */
+  //----- Init of the Motor control library
+  /* Set the L6474 library to use 1 device */
+	BSP_MotorControl_SetNbDevices(BSP_MOTOR_CONTROL_BOARD_ID_L6474, 1);
+	/* When BSP_MotorControl_Init is called with NULL pointer,                  */
+	/* the L6474 registers and parameters are set with the predefined values from file   */
+	/* l6474_target_config.h, otherwise the registers are set using the   */
+	/* L6474_Init_t pointer structure                */
+	/* The first call to BSP_MotorControl_Init initializes the first device     */
+	/* whose Id is 0.                                                           */
+	/* The nth call to BSP_MotorControl_Init initializes the nth device         */
+	/* whose Id is n-1.                                                         */
+	/* Uncomment the call to BSP_MotorControl_Init below to initialize the      */
+	/* device with the structure gL6474InitParams declared in the the main.c file */
+	/* and comment the subsequent call having the NULL pointer                   */
+	BSP_MotorControl_Init(BSP_MOTOR_CONTROL_BOARD_ID_L6474, &gL6474InitParams);
+	//BSP_MotorControl_Init(BSP_MOTOR_CONTROL_BOARD_ID_L6474, NULL);
+
+  /* Attach the function MyFlagInterruptHandler (defined below) to the flag interrupt */
+  BSP_MotorControl_AttachFlagInterrupt(MyFlagInterruptHandler);
+
+  /* Attach the function Error_Handler (defined below) to the error Handler*/
+  BSP_MotorControl_AttachErrorHandler(Error_Handler);
 
   /* USER CODE END SysInit */
 
@@ -131,6 +186,13 @@ int main(void)
 
   // Initialize encoder
   HAL_TIM_Encoder_Start(&htim3, TIM_CHANNEL_ALL);
+
+  //----- Move of 16000 steps in the FW direction
+  /* Move device 0 of 16000 steps in the FORWARD direction*/
+  BSP_MotorControl_Move(0, FORWARD, 16000);
+
+  /* Wait for the motor of device 0 ends moving */
+  //BSP_MotorControl_WaitWhileActive(0);
 
   /* USER CODE END 2 */
 
@@ -588,6 +650,92 @@ void HAL_UART_ErrorCallback (UART_HandleTypeDef * huart)
 {
   // Set CS pin to high and raise flag
 	uart_err_flag = 1;
+}
+
+void MyFlagInterruptHandler(void)
+{
+  /* Get the value of the status register via the L6474 command GET_STATUS */
+  uint16_t statusRegister = BSP_MotorControl_CmdGetStatus(0);
+
+  /* Check HIZ flag: if set, power brigdes are disabled */
+  if ((statusRegister & L6474_STATUS_HIZ) == L6474_STATUS_HIZ)
+  {
+    // HIZ state
+    // Action to be customized
+  }
+
+  /* Check direction bit */
+  if ((statusRegister & L6474_STATUS_DIR) == L6474_STATUS_DIR)
+  {
+    // Forward direction is set
+    // Action to be customized
+  }
+  else
+  {
+    // Backward direction is set
+    // Action to be customized
+  }
+
+  /* Check NOTPERF_CMD flag: if set, the command received by SPI can't be performed */
+  /* This often occures when a command is sent to the L6474 */
+  /* while it is in HIZ state */
+  if ((statusRegister & L6474_STATUS_NOTPERF_CMD) == L6474_STATUS_NOTPERF_CMD)
+  {
+      // Command received by SPI can't be performed
+     // Action to be customized
+  }
+
+  /* Check WRONG_CMD flag: if set, the command does not exist */
+  if ((statusRegister & L6474_STATUS_WRONG_CMD) == L6474_STATUS_WRONG_CMD)
+  {
+     //command received by SPI does not exist
+     // Action to be customized
+  }
+
+  /* Check UVLO flag: if not set, there is an undervoltage lock-out */
+  if ((statusRegister & L6474_STATUS_UVLO) == 0)
+  {
+     //undervoltage lock-out
+     // Action to be customized
+  }
+
+  /* Check TH_WRN flag: if not set, the thermal warning threshold is reached */
+  if ((statusRegister & L6474_STATUS_TH_WRN) == 0)
+  {
+    //thermal warning threshold is reached
+    // Action to be customized
+  }
+
+  /* Check TH_SHD flag: if not set, the thermal shut down threshold is reached */
+  if ((statusRegister & L6474_STATUS_TH_SD) == 0)
+  {
+    //thermal shut down threshold is reached
+    // Action to be customized
+  }
+
+  /* Check OCD  flag: if not set, there is an overcurrent detection */
+  if ((statusRegister & L6474_STATUS_OCD) == 0)
+  {
+    //overcurrent detection
+    // Action to be customized
+  }
+
+}
+
+/**
+  * @brief  This function is executed in case of error occurrence.
+  * @param  error number of the error
+  * @retval None
+  */
+void Error_Handler_uint16(uint16_t error)
+{
+  /* Backup error number */
+  gLastError = error;
+
+  /* Infinite loop */
+  while(1)
+  {
+  }
 }
 /* USER CODE END 4 */
 

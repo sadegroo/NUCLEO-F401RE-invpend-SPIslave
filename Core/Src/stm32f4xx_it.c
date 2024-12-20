@@ -22,6 +22,7 @@
 #include "stm32f4xx_it.h"
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include "x_nucleo_ihmxx.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -41,6 +42,9 @@
 
 /* Private variables ---------------------------------------------------------*/
 /* USER CODE BEGIN PV */
+extern TIM_HandleTypeDef hTimPwm1;
+extern TIM_HandleTypeDef hTimPwm2;
+extern TIM_HandleTypeDef hTimPwm3;
 
 /* USER CODE END PV */
 
@@ -228,5 +232,43 @@ void SPI3_IRQHandler(void)
 }
 
 /* USER CODE BEGIN 1 */
+/**
+  * @brief  This function handles interrupt for External lines 10 to 15
+  * @param  None
+  * @retval None
+  */
+void EXTI15_10_IRQHandler(void)
+{
+  HAL_GPIO_EXTI_IRQHandler(GPIO_PIN_10);
+}
 
+/**
+  * @brief  This function handles TIM2 interrupt request.
+  * @param  None
+  * @retval None
+  */
+void TIM2_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&hTimPwm2);
+}
+
+/**
+  * @brief  This function handles TIM3 interrupt request.
+  * @param  None
+  * @retval None
+  */
+void TIM3_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&hTimPwm1);
+}
+
+/**
+  * @brief  This function handles TIM4 interrupt request.
+  * @param  None
+  * @retval None
+  */
+void TIM4_IRQHandler(void)
+{
+  HAL_TIM_IRQHandler(&hTimPwm3);
+}
 /* USER CODE END 1 */

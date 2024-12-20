@@ -36,7 +36,12 @@ extern "C" {
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdbool.h>
+// #include <stdbool.h>
+
+#include "x_nucleo_ihmxx.h"
+#include "l6474.h"
+#include "x_nucleo_ihm01a1_stm32f4xx.h"
+
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
@@ -81,6 +86,8 @@ typedef struct {
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
+void SystemClock_Config(void);
+void Error_Handler_uint16(uint16_t error);
 
 /* USER CODE BEGIN EFP */
 

@@ -77,7 +77,7 @@ typedef struct {
 /* USER CODE BEGIN EM */
 #define SPI_BUFFER_SIZE  8
 #define UART_BUFFER_SIZE  100
-#define UART_DECIMATION  5000
+#define UART_DECIMATION  2000
 
 // encoder
 #define COUNTS_PER_TURN 2400

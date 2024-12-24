@@ -124,12 +124,8 @@ int main(void)
   float send_number2;       // stepper motor angle in revolutions
   uint8_t state_spi = 0;
   uint8_t state_uart = 0;
-  uint32_t suc_cnt = 0;
   uint32_t err_cnt = 0;
-  uint32_t buf_iter = 0;
-
-  int32_t pos;
-  uint16_t mySpeed;
+  uint32_t suc_cnt = 0;
 
   for(int i=0;i<SPI_BUFFER_SIZE;i++)
   {
@@ -222,8 +218,6 @@ int main(void)
 	  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 1000);
 	  HAL_Delay(1000);
 	  */
-
-/*
 	  // UART state machine
 		switch (state_uart)
 		{
@@ -232,7 +226,6 @@ int main(void)
 			  if ((suc_cnt % UART_DECIMATION) == 0 && suc_cnt != 0 )
 			  {
 				  state_uart = 1;
-				  buf_iter = 0;
 			  }
 			  break;
 
@@ -242,14 +235,14 @@ int main(void)
 				switch(HAL_UART_GetState(&huart2))
 				{
 				case HAL_UART_STATE_READY:
-					uart_buf_len = sprintf(uart_buf, "success: %d, errors: %d, rxnumber = %.3f, encoder = %.3f rad, rotor = %.3f rad\r\n", (unsigned int)suc_cnt, (unsigned int)err_cnt, recv_number1, send_number1, send_number2);
+					uart_buf_len = sprintf(uart_buf, "success: %d, errors: %d, motcmd = %.3f, encoder = %.3f, motfb = %.3f \r\n", (unsigned int)suc_cnt, (unsigned int)err_cnt, recv_number1, send_number1, send_number2);
 					HAL_UART_Transmit_IT(&huart2, (uint8_t *)uart_buf, uart_buf_len);
 
 				default:
 				  break;
 				}
 
-			state_uart = 2;
+			state_uart = 0;
 			break;
 
 		  case 2:
@@ -271,9 +264,7 @@ int main(void)
 			break;
 
 		} //close switch
-		*/
-
-
+		//-----------------------------------------------
 		// Finite state machine to allow for non-blocking SPI transmit/receive
 		switch(state_spi)
 		{
@@ -284,57 +275,44 @@ int main(void)
 			rotor_position_read(&send_number2);
 			state_spi++;
 		  case 1:
-		  // transmit and receive
-		    //if (HAL_SPI_GetState(&hspi3) == HAL_SPI_STATE_READY){
-			  if (spi_txrx_flag){
-				//HAL_SPI_TransmitReceive(&hspi3, (uint8_t *)spi_tx_buf, (uint8_t *)spi_rx_buf, SPI_BUFFER_SIZE,10);
-				spi_txrx_flag = 0;
-				// copy buffers
-		    	HAL_SPI_DMAPause(&hspi3);
-		    	__disable_irq();
-		    	memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
-				memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
-				memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
-				memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
-				__enable_irq();
-				HAL_SPI_DMAResume(&hspi3);
-				state_spi++;
-		    }
-		    else
-		    {
-		    	break;
-		    }
+			  // Wait for DMA to finish transmit/receive flag
+				if (spi_txrx_flag){
+					suc_cnt++;
+					spi_txrx_flag = 0;
+					// copy new data to SPI buffers
+					HAL_SPI_DMAPause(&hspi3);
+					__disable_irq();
+					memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
+					memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
+					memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
+					memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
+					__enable_irq();
+					HAL_SPI_DMAResume(&hspi3);
+					state_spi++;
+				}
+				else
+				{
+					break;
+				}
 			// Go to next state: waiting for interrupt flag
-
-
-		  // Wait for transmit/receive flag
 		  case 2:
-			 //if (spi_txrx_flag)
-			 //{
-			  // Clear flag and go to next state
-				spi_txrx_flag = 0;
 				state_spi = 0;
-				suc_cnt++;
-				// copy buffer
-
 				// run control if motor inactive or standby
 				if(BSP_MotorControl_GetDeviceState(0) >= 8) {
 					BSP_MotorControl_GoTo(0, (int32_t) (recv_number1 * STEPS_PER_TURN));
 				}
-
-			  //}
-			  // catch error
-			  if (spi_err_flag && HAL_SPI_GetState(&hspi3) == HAL_SPI_STATE_READY)
-			  {
-			  // Clear flag and try again
-				spi_err_flag = 0;
-				state_spi = 0;
-				err_cnt++;
-			   }
 			  break;
 		  default:
 			  break;
 			}
+
+		  // count any communication errors
+		  if (spi_err_flag)
+		  {
+		  	err_cnt++;
+			spi_err_flag = 0; // Clear flag
+
+		   }
 
   }
   /* USER CODE END 3 */

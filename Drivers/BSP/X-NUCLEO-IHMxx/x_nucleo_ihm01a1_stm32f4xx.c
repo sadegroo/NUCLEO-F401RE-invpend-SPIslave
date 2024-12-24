@@ -38,7 +38,7 @@
   */   
     
 /// Timer Prescaler
-#define TIMER_PRESCALER (1024)
+//#define TIMER_PRESCALER (1024) //moved to header file
 
 /// SPI Maximum Timeout values for flags waiting loops
 #define SPIx_TIMEOUT_MAX                      ((uint32_t)0x1000)
@@ -72,6 +72,8 @@ void L6474_Board_Delay(uint32_t delay);         //Delay of the requested number 
 void L6474_Board_DisableIrq(void);              //Disable Irq
 void L6474_Board_EnableIrq(void);               //Enable Irq
 void L6474_Board_GpioInit(uint8_t deviceId);   //Initialise GPIOs used for L6474s
+uint32_t L6474_Board_Pwm1GetCounter(void);
+void L6474_Board_Pwm1SetPeriod(uint32_t period);
 void L6474_Board_Pwm1SetFreq(uint16_t newFreq); //Set PWM1 frequency and start it
 void L6474_Board_Pwm2SetFreq(uint16_t newFreq); //Set PWM2 frequency and start it  
 void L6474_Board_Pwm3SetFreq(uint16_t newFreq); //Set PWM3 frequency and start it
@@ -195,6 +197,29 @@ void L6474_Board_GpioInit(uint8_t deviceId)
       GPIO_InitStruct.Speed = GPIO_SPEED_MEDIUM;
       HAL_GPIO_Init(BSP_MOTOR_CONTROL_BOARD_DIR_3_PORT, &GPIO_InitStruct);    
         break;
+  }
+}
+
+/******************************************************//**
+ * @brief  Returns the current value of the counter used by PWM1, used by device 0
+ * @retval the counter value
+ **********************************************************/
+uint32_t L6474_Board_Pwm1GetCounter() {
+	return hTimPwm1.Instance->CNT;
+}
+
+
+/******************************************************//**
+ * @brief  Sets the period of PWM1 used by device 0
+ * @param[in] period in counter increments
+ * @retval None
+ **********************************************************/
+void L6474_Board_Pwm1SetPeriod(uint32_t period)
+{
+  __HAL_TIM_SetAutoreload(&hTimPwm1, period-1);
+//  __HAL_TIM_SetCompare(&hTimPwm1, BSP_MOTOR_CONTROL_BOARD_CHAN_TIMER_PWM1, period >> 1);
+  if (hTimPwm1.Instance->CCER == 0) { // Check if a capture compare channel has not been enabled yet
+	  HAL_TIM_PWM_Start_IT(&hTimPwm1, BSP_MOTOR_CONTROL_BOARD_CHAN_TIMER_PWM1);
   }
 }
 

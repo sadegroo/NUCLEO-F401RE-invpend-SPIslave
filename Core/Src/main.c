@@ -83,6 +83,14 @@ L6474_Init_t gL6474InitParams =
     L6474_ALARM_EN_SW_TURN_ON       |
     L6474_ALARM_EN_WRONG_NPERF_CMD)    /// Alarm (ALARM_EN register).
 };
+
+L6474_Acceleration_Control_Init_TypeDef gAccelControlInitParams =
+{
+	MAX_SPEED,
+	MAX_ACCEL,
+	MAX_DECEL,
+	T_SAMPLE
+};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -135,6 +143,10 @@ int main(void)
 
   //Declare and initialize encoder
   Quadrature_Encoder_TypeDef encoder_inst = {0,0,0,0,0,0,0,0,0,0,0,0,FALSE,FALSE,FALSE,COUNTS_PER_TURN};
+
+  //initialize acceleration control
+  Init_L6472_Acceleration_Control(&gAccelControlInitParams);
+
   /* USER CODE END 1 */
 
   /* MCU Configuration--------------------------------------------------------*/
@@ -297,10 +309,24 @@ int main(void)
 			// Go to next state: waiting for interrupt flag
 		  case 2:
 				state_spi = 0;
-				// run control if motor inactive or standby
+#ifdef ACCELERATION_CONTROL
+				/*
+				current_speed = (float) BSP_MotorControl_GetCurrentSpeed(0) / (float) STEPS_PER_TURN;
+				acceleration = 1000.0 *  recv_number1;
+
+				void BSP_MotorControl_Run(uint8_t deviceId, motorDir_t direction);
+				bool BSP_MotorControl_SetAcceleration(uint8_t deviceId,uint16_t newAcc);
+				bool BSP_MotorControl_SetDeceleration(uint8_t deviceId, uint16_t newDec);
+				//apply_acceleration(&acceleration, &target_velocity_prescaled, (float) T_SAMPLE);
+				 * */
+				 */
+#endif
+#ifdef POSITION_CONTROL
+				//run control if motor inactive or standby
 				if(BSP_MotorControl_GetDeviceState(0) >= 8) {
 					BSP_MotorControl_GoTo(0, (int32_t) (recv_number1 * STEPS_PER_TURN));
 				}
+#endif
 			  break;
 		  default:
 			  break;
@@ -620,6 +646,27 @@ void rotor_position_read(float * angle) {
 	stepcount = BSP_MotorControl_GetPosition(0);
 	*angle = (float) stepcount / (float) STEPS_PER_TURN;
 }
+
+
+
+__STATIC_INLINE void DWT_Delay_us(volatile uint32_t microseconds)
+{
+	uint32_t clk_cycle_start = DWT->CYCCNT;
+
+	/* Go to number of cycles for system */
+	microseconds *= (RCC_HCLK_FREQ / 1000000);
+
+	/* Delay till end */
+	while ((DWT->CYCCNT - clk_cycle_start) < microseconds);
+}
+
+__STATIC_INLINE void DWT_Delay_until_cycle(volatile uint32_t cycle)
+{
+	while (DWT->CYCCNT < cycle);
+}
+
+//------------------------------------------------------
+// Callbacks
 
 void HAL_SPI_TxRxCpltCallback (SPI_HandleTypeDef * hspi)
 {

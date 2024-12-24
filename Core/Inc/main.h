@@ -37,10 +37,10 @@ extern "C" {
 #include <stdio.h>
 #include <string.h>
 // #include <stdbool.h>
-
-#include "x_nucleo_ihmxx.h"
 #include "l6474.h"
+#include "x_nucleo_ihmxx.h"
 #include "x_nucleo_ihm01a1_stm32f4xx.h"
+#include "l6474_acceleration_control.h"
 
 /* USER CODE END Includes */
 
@@ -75,6 +75,18 @@ typedef struct {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
+
+#define delayUS_ASM(us) do {\
+		asm volatile (	"MOV R0,%[loops]\n\t"\
+				"1: \n\t"\
+				"SUB R0, #1\n\t"\
+				"CMP R0, #0\n\t"\
+				"BNE 1b \n\t" : : [loops] "r" (16*us) : "memory"\
+		);\
+} while(0)
+
+#define T_SAMPLE 0.0005 // should match the sample time in MATLAB model
+
 #define SPI_BUFFER_SIZE  8
 #define UART_BUFFER_SIZE  100
 #define UART_DECIMATION  2000
@@ -83,15 +95,17 @@ typedef struct {
 #define COUNTS_PER_TURN 2400
 
 // stepper motor
-#define MAX_SPEED 2000
+//#define ACCELERATION_CONTROL
+//#define VELOCITY_CONTROL
+#define POSITION_CONTROL
+#define MAX_SPEED 12000
 #define MIN_SPEED 800
-#define MAX_ACCEL 6000
-#define MAX_DECEL 6000
+#define MAX_ACCEL 32767
+#define MAX_DECEL 32767
 #define MAX_TORQUE_CONFIG 800 					// 400 Selected Value for normal control operation
 #define OVERCURRENT_THRESHOLD 2000				// 2000 Selected Value for Integrated Rotary Inverted Pendulum System
 #define STEPS_PER_TURN 3200
-//#define TRUE  1
-//#define FALSE 0
+
 
 #define HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))
 /* USER CODE END EM */

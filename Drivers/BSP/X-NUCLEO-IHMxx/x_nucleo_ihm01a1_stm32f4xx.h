@@ -123,6 +123,8 @@
 #define SPIx_SCK_AF    (GPIO_AF5_SPI2)
 #endif /* #ifndef BSP_MOTOR_CONTROL_BOARD_USE_SPI2 */
 
+#define TIMER_PRESCALER (1024)
+
 /// PWM1 frequency rescaler (1 for HW PWM, 2 for SW PWM)
 #define BSP_MOTOR_CONTROL_BOARD_PWM1_FREQ_RESCALER    (1)   
 /// PWM2 frequency rescaler (1 for HW PWM, 2 for SW PWM)

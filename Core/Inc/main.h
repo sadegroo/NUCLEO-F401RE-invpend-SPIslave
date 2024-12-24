@@ -62,7 +62,7 @@ typedef struct {
     bool peaked;
     bool handled_peak;
     bool zero_crossed;
-    const int COUNTS_PER_TURN;		//
+    const int counts_per_turn;		//
 
 } Quadrature_Encoder_TypeDef;
 
@@ -75,22 +75,32 @@ typedef struct {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-#define SPI_BUFFER_SIZE  4
+#define SPI_BUFFER_SIZE  8
 #define UART_BUFFER_SIZE  100
-#define UART_DECIMATION  4000
-#define TRUE  1
-#define FALSE 0
+#define UART_DECIMATION  5000
+
+// encoder
+#define COUNTS_PER_TURN 2400
+
+// stepper motor
+#define MAX_SPEED 2000
+#define MIN_SPEED 800
+#define MAX_ACCEL 6000
+#define MAX_DECEL 6000
+#define MAX_TORQUE_CONFIG 800 					// 400 Selected Value for normal control operation
+#define OVERCURRENT_THRESHOLD 2000				// 2000 Selected Value for Integrated Rotary Inverted Pendulum System
+#define STEPS_PER_TURN 3200
+//#define TRUE  1
+//#define FALSE 0
 
 #define HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
-void Error_Handler(void);
-void SystemClock_Config(void);
-void Error_Handler_uint16(uint16_t error);
+//void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+void Error_Handler(uint16_t error);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

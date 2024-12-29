@@ -291,41 +291,33 @@ int main(void)
 				if (spi_txrx_flag){
 					suc_cnt++;
 					spi_txrx_flag = 0;
-					// copy new data to SPI buffers
-					HAL_SPI_DMAPause(&hspi3);
-					__disable_irq();
-					memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
-					memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
-					memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
-					memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
-					__enable_irq();
-					HAL_SPI_DMAResume(&hspi3);
 					state_spi++;
 				}
 				else
 				{
 					break;
 				}
-			// Go to next state: waiting for interrupt flag
+			// Go to next state: copy tx/rx and control actions
 		  case 2:
+				// copy new data to SPI buffers
+				HAL_SPI_DMAPause(&hspi3);
+				__disable_irq();
+				memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
+				memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
+				memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
+				memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
+				__enable_irq();
+				HAL_SPI_DMAResume(&hspi3);
 				state_spi = 0;
-#ifdef ACCELERATION_CONTROL
-				/*
-				current_speed = (float) BSP_MotorControl_GetCurrentSpeed(0) / (float) STEPS_PER_TURN;
-				acceleration = 1000.0 *  recv_number1;
 
-				void BSP_MotorControl_Run(uint8_t deviceId, motorDir_t direction);
-				bool BSP_MotorControl_SetAcceleration(uint8_t deviceId,uint16_t newAcc);
-				bool BSP_MotorControl_SetDeceleration(uint8_t deviceId, uint16_t newDec);
-				//apply_acceleration(&acceleration, &target_velocity_prescaled, (float) T_SAMPLE);
-				 * */
-				 */
-#endif
 #ifdef POSITION_CONTROL
 				//run control if motor inactive or standby
 				if(BSP_MotorControl_GetDeviceState(0) >= 8) {
 					BSP_MotorControl_GoTo(0, (int32_t) (recv_number1 * STEPS_PER_TURN));
 				}
+#endif
+#ifdef ACCELERATION_CONTROL // Needs to be called as fast as possible
+				Update_L6472_Acceleration_Control(10000.0 *  recv_number1);
 #endif
 			  break;
 		  default:
@@ -339,8 +331,11 @@ int main(void)
 			spi_err_flag = 0; // Clear flag
 
 		   }
+#ifdef ACCELERATION_CONTROL // Needs to be called as fast as possible
+		  Check_L6472_Acceleration_Control();
+#endif
 
-  }
+  } // close while(1)
   /* USER CODE END 3 */
 }
 

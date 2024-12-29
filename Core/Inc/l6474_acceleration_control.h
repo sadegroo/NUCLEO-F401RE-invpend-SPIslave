@@ -28,6 +28,7 @@ extern "C" {
 //typedefs
 typedef struct {
 	uint32_t desired_pwm_period;
+	float desired_pwm_period_float;
 	uint32_t current_pwm_period;
 	uint32_t apply_acc_start_time;
 	uint32_t clock_int_time;
@@ -39,6 +40,10 @@ typedef struct {
 	uint32_t max_accel; // in microsteps/s^2
 	uint32_t max_decel; // in microsteps/s^2
 	float t_sample; // in seconds
+	motorDir_t old_dir;
+	motorDir_t new_dir;
+	float speed_prescaled;
+	uint8_t firstcall_ok;
 
 } L6474_Acceleration_Control_TypeDef;
 
@@ -52,6 +57,7 @@ typedef struct {
 // local function prototypes
 void Init_L6472_Acceleration_Control(L6474_Acceleration_Control_Init_TypeDef *gInitParams);
 void Update_L6472_Acceleration_Control(float acc);
+void Check_L6472_Acceleration_Control(void);
 
 // extern function prototypes
 

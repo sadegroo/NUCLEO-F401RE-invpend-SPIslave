@@ -95,9 +95,9 @@ typedef struct {
 #define COUNTS_PER_TURN 2400
 
 // stepper motor
-//#define ACCELERATION_CONTROL
-//#define VELOCITY_CONTROL
-#define POSITION_CONTROL
+#define ACCELERATION_CONTROL
+//#define VELOCITY_CONTROL // NOT IMPLEMENTED
+//#define POSITION_CONTROL
 #define MAX_SPEED 12000
 #define MIN_SPEED 800
 #define MAX_ACCEL 32767

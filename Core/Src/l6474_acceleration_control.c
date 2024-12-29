@@ -18,6 +18,7 @@ void Init_L6472_Acceleration_Control(L6474_Acceleration_Control_Init_TypeDef *gI
 	  hAccelCtrl.max_speed = gInitParams->max_speed;
 	  hAccelCtrl.max_accel = gInitParams->max_accel;
 	  hAccelCtrl.max_decel = gInitParams->max_decel;
+	  hAccelCtrl.firstcall_ok = 0;
 }
 
 
@@ -25,8 +26,54 @@ void Update_L6472_Acceleration_Control(float acc) {
 	/*
 	 *  Stepper motor acceleration, speed, direction and position control developed by Ryan Nemiroff
 	 */
-	float speed_prescaled;
-	float desired_pwm_period_float;
+
+
+
+	/*
+	 * Add time reporting
+	 */
+
+	hAccelCtrl.firstcall_ok = 1;
+	hAccelCtrl.apply_acc_start_time = DWT->CYCCNT;
+
+	hAccelCtrl.old_dir = hAccelCtrl.target_velocity_prescaled > 0 ? FORWARD : BACKWARD;
+
+	if (hAccelCtrl.old_dir == FORWARD) {
+		if (acc > (float) hAccelCtrl.max_accel) {
+			hAccelCtrl.acceleration = (float) hAccelCtrl.max_accel;
+		} else if (acc < -1.0*(float) hAccelCtrl.max_decel) {
+			hAccelCtrl.acceleration = -1.0* (float) hAccelCtrl.max_decel;
+		}
+	} else {
+		if (acc < -1.0* (float) hAccelCtrl.max_accel) {
+			hAccelCtrl.acceleration = -1.0*(float) hAccelCtrl.max_accel;
+		} else if (acc > (float) hAccelCtrl.max_decel) {
+			hAccelCtrl.acceleration = (float) hAccelCtrl.max_decel;
+		}
+	}
+
+	hAccelCtrl.target_velocity_prescaled += __L6474_Board_Pwm1PrescaleFreq(acc) * hAccelCtrl.t_sample;
+	hAccelCtrl.new_dir = hAccelCtrl.target_velocity_prescaled > 0 ? FORWARD : BACKWARD;
+
+	if (hAccelCtrl.target_velocity_prescaled > (float) __L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.max_speed)) {
+		hAccelCtrl.target_velocity_prescaled = (float) __L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.max_speed);
+	} else if (hAccelCtrl.target_velocity_prescaled < -1.0*(float) __L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.max_speed)) {
+		hAccelCtrl.target_velocity_prescaled = -1.0*(float) __L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.max_speed);
+	}
+
+
+	if (hAccelCtrl.new_dir == FORWARD) {
+		hAccelCtrl.speed_prescaled = hAccelCtrl.target_velocity_prescaled;
+	} else {
+		hAccelCtrl.speed_prescaled = hAccelCtrl.target_velocity_prescaled * -1.0;
+		if (hAccelCtrl.speed_prescaled == 0) hAccelCtrl.speed_prescaled = 0; // convert negative 0 to positive 0
+	}
+
+	hAccelCtrl.desired_pwm_period_float = roundf(RCC_SYS_CLOCK_FREQ / hAccelCtrl.speed_prescaled);
+
+}
+void Check_L6472_Acceleration_Control(void) {
+
 	uint32_t pwm_count ;
 	uint32_t pwm_time_left;
 	uint32_t new_pwm_time_left;
@@ -34,63 +81,23 @@ void Update_L6472_Acceleration_Control(float acc) {
 	uint32_t desired_pwm_period_local = hAccelCtrl.desired_pwm_period;
 	uint32_t effective_pwm_period = desired_pwm_period_local;
 
-	/*
-	 * Add time reporting
-	 */
+	if (hAccelCtrl.firstcall_ok == 1) {
 
-
-	hAccelCtrl.apply_acc_start_time = DWT->CYCCNT;
-	hAccelCtrl.acceleration = acc; // new acceleration
-
-	motorDir_t old_dir = hAccelCtrl.target_velocity_prescaled > 0 ? FORWARD : BACKWARD;
-
-	if (old_dir == FORWARD) {
-		if (hAccelCtrl.acceleration > hAccelCtrl.max_accel) {
-			hAccelCtrl.acceleration = hAccelCtrl.max_accel;
-		} else if (hAccelCtrl.acceleration < -hAccelCtrl.max_decel) {
-			hAccelCtrl.acceleration = -hAccelCtrl.max_decel;
-		}
-	} else {
-		if (hAccelCtrl.acceleration < -hAccelCtrl.max_accel) {
-			hAccelCtrl.acceleration = -hAccelCtrl.max_accel;
-		} else if (hAccelCtrl.acceleration > hAccelCtrl.max_decel) {
-			hAccelCtrl.acceleration = hAccelCtrl.max_decel;
-		}
-	}
-
-	hAccelCtrl.target_velocity_prescaled += __L6474_Board_Pwm1PrescaleFreq(acc) * hAccelCtrl.t_sample;
-	motorDir_t new_dir = hAccelCtrl.target_velocity_prescaled > 0 ? FORWARD : BACKWARD;
-
-	if (hAccelCtrl.target_velocity_prescaled > __L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.max_speed)) {
-		hAccelCtrl.target_velocity_prescaled = __L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.max_speed);
-	} else if (hAccelCtrl.target_velocity_prescaled < -1*__L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.max_speed)) {
-		hAccelCtrl.target_velocity_prescaled = (float) -1*__L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.max_speed);
-	}
-
-
-	if (new_dir == FORWARD) {
-		speed_prescaled = hAccelCtrl.target_velocity_prescaled;
-	} else {
-		speed_prescaled = hAccelCtrl.target_velocity_prescaled * -1.0;
-		if (speed_prescaled == 0) speed_prescaled = 0; // convert negative 0 to positive 0
-	}
-
-	desired_pwm_period_float = roundf(RCC_SYS_CLOCK_FREQ / speed_prescaled);
-		if (!(desired_pwm_period_float < 4294967296.0f)) {
+		if (!(hAccelCtrl.desired_pwm_period_float < 4294967296.0f)) {
 			desired_pwm_period_local = UINT32_MAX;
 		} else {
-			desired_pwm_period_local = (uint32_t)(desired_pwm_period_float);
+			desired_pwm_period_local = (uint32_t)(hAccelCtrl.desired_pwm_period_float);
 		}
 
-		if (old_dir != new_dir) {
-			L6474_Board_SetDirectionGpio(0, new_dir);
+		if (hAccelCtrl.old_dir != hAccelCtrl.new_dir) {
+			L6474_Board_SetDirectionGpio(0, hAccelCtrl.new_dir);
 		}
 
 		if (current_pwm_period_local != 0) {
 			pwm_count = L6474_Board_Pwm1GetCounter();
 			pwm_time_left = current_pwm_period_local - pwm_count;
 			if (pwm_time_left > PWM_COUNT_SAFETY_MARGIN) {
-				if (old_dir != new_dir) {
+				if (hAccelCtrl.old_dir != hAccelCtrl.new_dir) {
 					// pwm_time_left = effective_pwm_period - pwm_time_left; // One method for assignment of PWM period during switching directions. This has the effect of additional discrete step noise.
 					pwm_time_left = effective_pwm_period; // Second method for assignment of PWM period during switching directions. This shows reduced discrete step noise.
 				}
@@ -115,5 +122,6 @@ void Update_L6472_Acceleration_Control(float acc) {
 		}
 
 		hAccelCtrl.desired_pwm_period = desired_pwm_period_local;
-
+		hAccelCtrl.velocity = (float) RCC_SYS_CLOCK_FREQ / (float) hAccelCtrl.current_pwm_period / (float) TIMER_PRESCALER / (float) BSP_MOTOR_CONTROL_BOARD_PWM1_FREQ_RESCALER;
+	}
 }

@@ -87,7 +87,7 @@ typedef struct {
 
 #define FLT_EPSILON 0x1p-23
 
-#define T_SAMPLE 0.0005 // should match the sample time in MATLAB model
+#define T_SAMPLE 0.001 // should match the sample time in MATLAB model
 
 #define SPI_BUFFER_SIZE  8
 #define UART_BUFFER_SIZE  100

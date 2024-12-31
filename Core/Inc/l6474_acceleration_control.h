@@ -22,7 +22,6 @@ extern "C" {
 #define ARM_MATH_CM4
 #define ACCEL_CONTROL_DATA 0		// Set to 1 for display of timing data
 #define PWM_COUNT_SAFETY_MARGIN 2
-#define MIN_START_SPEED 30
 
 // Prescale a frequency in preparation for calculating counter period for PWM1
 #define __L6474_Board_Pwm1PrescaleFreq(freq) (TIMER_PRESCALER * BSP_MOTOR_CONTROL_BOARD_PWM1_FREQ_RESCALER * freq)
@@ -38,6 +37,7 @@ typedef struct {
 	float target_velocity_prescaled;
 	float acceleration; // in microsteps/s^2
 	float velocity;	// in microsteps/s
+	uint32_t min_speed; // in microsteps/s
 	uint32_t max_speed; // in microsteps/s
 	uint32_t max_accel; // in microsteps/s^2
 	float t_sample; // in seconds
@@ -50,6 +50,7 @@ typedef struct {
 } L6474_Acceleration_Control_TypeDef;
 
 typedef struct {
+	uint32_t min_speed;
 	uint32_t max_speed;
 	uint32_t max_accel;
 	float t_sample;

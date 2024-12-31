@@ -55,6 +55,14 @@ volatile uint8_t uart_err_flag = 0;
 volatile uint8_t spi_txrx_flag = 0;
 volatile uint8_t spi_err_flag = 0;
 
+static uint8_t spi_rx_buf[SPI_BUFFER_SIZE];
+static uint8_t spi_tx_buf[SPI_BUFFER_SIZE];
+static float recv_number1=0.0;   // stepper motor acceleration command in rad/s^2
+static float recv_number2=0.0;
+static float send_number1;	    // encoder position in revolutions
+static float send_number2;       // stepper motor angle in revolutions
+static float tmp_float;
+
 static volatile uint16_t gLastError;
 
 L6474_Init_t gL6474InitParams =
@@ -86,6 +94,7 @@ L6474_Init_t gL6474InitParams =
 
 L6474_Acceleration_Control_Init_TypeDef gAccelControlInitParams =
 {
+	MIN_SPEED,
 	MAX_SPEED,
 	MAX_ACCEL,
 	T_SAMPLE
@@ -122,13 +131,6 @@ int main(void)
   int  uart_buf_len;
   int encoder_range_error;
 
-  uint8_t spi_rx_buf[SPI_BUFFER_SIZE];
-  uint8_t spi_tx_buf[SPI_BUFFER_SIZE];
-  //char spi_rx_buf_copy[SPI_BUFFER_SIZE];
-  float recv_number1=0.0;   // stepper motor acceleration command in rad/s^2
-  float recv_number2=0.0;
-  float send_number1;	    // encoder position in revolutions
-  float send_number2;       // stepper motor angle in revolutions
   uint8_t state_spi = 0;
   uint8_t state_uart = 0;
   uint32_t err_cnt = 0;
@@ -185,7 +187,9 @@ int main(void)
   /* Attach the function Error_Handler (defined below) to the error Handler*/
   BSP_MotorControl_AttachErrorHandler(Error_Handler);
   BSP_MotorControl_SetHome(0, 0);
-  BSP_MotorControl_GoTo(0, 3200);
+  BSP_MotorControl_GoTo(0, 50); // wake-up move
+  BSP_MotorControl_WaitWhileActive(0);
+  BSP_MotorControl_GoTo(0, 0);
   BSP_MotorControl_WaitWhileActive(0);
 
   //initialize acceleration control
@@ -202,8 +206,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   // Say something
-  uart_buf_len = sprintf(uart_buf, "Hello world!\r\n");
-  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
+  //uart_buf_len = sprintf(uart_buf, "Hello world!\r\n");
+  //HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
 
   // Initialize encoder
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
@@ -233,6 +237,7 @@ int main(void)
 	  HAL_Delay(1000);
 	  */
 	  // UART state machine
+	  /*
 		switch (state_uart)
 		{
 		  case 0:
@@ -278,6 +283,7 @@ int main(void)
 			break;
 
 		} //close switch
+		*/
 		//-----------------------------------------------
 		// Finite state machine to allow for non-blocking SPI transmit/receive
 		switch(state_spi)
@@ -285,8 +291,11 @@ int main(void)
 		  case 0:
 			// Read encoder
 			encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
+			rotor_position_read(&tmp_float);
+			__disable_irq();
 			send_number1 = encoder_inst.position;
-			rotor_position_read(&send_number2);
+			send_number2 = tmp_float;
+			__enable_irq();
 			state_spi++;
 		  case 1:
 			  // Wait for DMA to finish transmit/receive flag
@@ -301,15 +310,17 @@ int main(void)
 				}
 			// Go to next state: copy tx/rx and control actions
 		  case 2:
+			  /*
 				// copy new data to SPI buffers
 				HAL_SPI_DMAPause(&hspi3);
-				__disable_irq();
+				//__disable_irq();
 				memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
 				memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
 				memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
 				memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
-				__enable_irq();
+				//__enable_irq();
 				HAL_SPI_DMAResume(&hspi3);
+				*/
 				state_spi = 0;
 
 #ifdef POSITION_CONTROL
@@ -320,7 +331,7 @@ int main(void)
 #endif
 #ifdef ACCELERATION_CONTROL
 
-				Integrate_L6472_Acceleration_Control(recv_number1);
+				Integrate_L6472_Acceleration_Control(recv_number1 * STEPS_PER_TURN);
 
 
 #endif
@@ -666,8 +677,11 @@ __STATIC_INLINE void DWT_Delay_until_cycle(volatile uint32_t cycle)
 
 void HAL_SPI_TxRxCpltCallback (SPI_HandleTypeDef * hspi)
 {
-  spi_txrx_flag = 1;
-  //HAL_SPI_DMAPause(hspi);
+	spi_txrx_flag = 1;
+	memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
+	memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
+	memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
+	memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
 }
 
 void HAL_SPI_ErrorCallback (SPI_HandleTypeDef * hspi)

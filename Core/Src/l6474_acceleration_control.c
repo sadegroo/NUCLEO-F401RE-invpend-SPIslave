@@ -15,6 +15,7 @@ void Init_L6472_Acceleration_Control(L6474_Acceleration_Control_Init_TypeDef *gI
 	  hAccelCtrl.target_velocity_prescaled = 0.0;
 
 	  hAccelCtrl.t_sample = gInitParams->t_sample;
+	  hAccelCtrl.min_speed = gInitParams->min_speed;
 	  hAccelCtrl.max_speed = gInitParams->max_speed;
 	  hAccelCtrl.max_accel = gInitParams->max_accel;
 	  hAccelCtrl.update_flag = 0;
@@ -74,6 +75,10 @@ void Integrate_L6472_Acceleration_Control(float acc) {
 			if (hAccelCtrl.speed_prescaled == 0) hAccelCtrl.speed_prescaled = 0; // convert negative 0 to positive 0
 		}
 
+		if (hAccelCtrl.speed_prescaled < __L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.min_speed)) {
+			hAccelCtrl.speed_prescaled = __L6474_Board_Pwm1PrescaleFreq(hAccelCtrl.min_speed);
+		}
+
 		hAccelCtrl.desired_pwm_period_float = roundf(RCC_SYS_CLOCK_FREQ / hAccelCtrl.speed_prescaled);
 
 		if (!(hAccelCtrl.desired_pwm_period_float < 4294967296.0f)) {
@@ -88,10 +93,12 @@ void Integrate_L6472_Acceleration_Control(float acc) {
 
 void Update_L6472_Acceleration_Control(void) {
 
+	//motorDir_t current_dir = BSP_MotorControl_GetDirection(0);
+
 	if (hAccelCtrl.update_flag == 1) {
 		if (hAccelCtrl.target_velocity_prescaled < 0){
 			L6474_Board_SetDirectionGpio(0, BACKWARD);
-		} else {
+		} else if (hAccelCtrl.target_velocity_prescaled > 0){
 			L6474_Board_SetDirectionGpio(0, FORWARD);
 		}
 

@@ -88,7 +88,6 @@ L6474_Acceleration_Control_Init_TypeDef gAccelControlInitParams =
 {
 	MAX_SPEED,
 	MAX_ACCEL,
-	MAX_DECEL,
 	T_SAMPLE
 };
 /* USER CODE END PV */
@@ -135,6 +134,9 @@ int main(void)
   uint32_t err_cnt = 0;
   uint32_t suc_cnt = 0;
 
+  float velocity_setpoint =0.0;
+  float prev_velocity_setpoint =0.0;
+
   for(int i=0;i<SPI_BUFFER_SIZE;i++)
   {
 	  spi_rx_buf[i]=0;
@@ -143,9 +145,6 @@ int main(void)
 
   //Declare and initialize encoder
   Quadrature_Encoder_TypeDef encoder_inst = {0,0,0,0,0,0,0,0,0,0,0,0,FALSE,FALSE,FALSE,COUNTS_PER_TURN};
-
-  //initialize acceleration control
-  Init_L6472_Acceleration_Control(&gAccelControlInitParams);
 
   /* USER CODE END 1 */
 
@@ -188,6 +187,9 @@ int main(void)
   BSP_MotorControl_SetHome(0, 0);
   BSP_MotorControl_GoTo(0, 3200);
   BSP_MotorControl_WaitWhileActive(0);
+
+  //initialize acceleration control
+  Init_L6472_Acceleration_Control(&gAccelControlInitParams);
 
   /* USER CODE END SysInit */
 
@@ -316,8 +318,11 @@ int main(void)
 					BSP_MotorControl_GoTo(0, (int32_t) (recv_number1 * STEPS_PER_TURN));
 				}
 #endif
-#ifdef ACCELERATION_CONTROL // Needs to be called as fast as possible
-				Update_L6472_Acceleration_Control(10000.0 *  recv_number1);
+#ifdef ACCELERATION_CONTROL
+
+				Integrate_L6472_Acceleration_Control(recv_number1);
+
+
 #endif
 			  break;
 		  default:
@@ -331,10 +336,6 @@ int main(void)
 			spi_err_flag = 0; // Clear flag
 
 		   }
-#ifdef ACCELERATION_CONTROL // Needs to be called as fast as possible
-		  Check_L6472_Acceleration_Control();
-#endif
-
   } // close while(1)
   /* USER CODE END 3 */
 }
@@ -602,7 +603,7 @@ int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef
 	 */
 
 
-	if (HAS_OPPOSITE_SIGNS(encoder->position_steps, encoder->previous_position))
+	if (__HAS_OPPOSITE_SIGNS(encoder->position_steps, encoder->previous_position))
 	{
 		encoder->peaked = FALSE;
 		encoder->zero_crossed = TRUE;
@@ -666,6 +667,7 @@ __STATIC_INLINE void DWT_Delay_until_cycle(volatile uint32_t cycle)
 void HAL_SPI_TxRxCpltCallback (SPI_HandleTypeDef * hspi)
 {
   spi_txrx_flag = 1;
+  //HAL_SPI_DMAPause(hspi);
 }
 
 void HAL_SPI_ErrorCallback (SPI_HandleTypeDef * hspi)

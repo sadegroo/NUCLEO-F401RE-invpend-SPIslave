@@ -499,6 +499,9 @@ void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
     if (BSP_MotorControl_GetDeviceState(0) != INACTIVE)
     {
       BSP_MotorControl_StepClockHandler(0);
+#ifdef ACCELERATION_CONTROL
+      Update_L6472_Acceleration_Control();
+#endif
     }
   }
   if ((htim->Instance == BSP_MOTOR_CONTROL_BOARD_TIMER_PWM2)&& (htim->Channel == BSP_MOTOR_CONTROL_BOARD_HAL_ACT_CHAN_TIMER_PWM2))

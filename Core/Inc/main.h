@@ -85,6 +85,8 @@ typedef struct {
 		);\
 } while(0)
 
+#define FLT_EPSILON 0x1p-23
+
 #define T_SAMPLE 0.0005 // should match the sample time in MATLAB model
 
 #define SPI_BUFFER_SIZE  8
@@ -98,8 +100,8 @@ typedef struct {
 #define ACCELERATION_CONTROL
 //#define VELOCITY_CONTROL // NOT IMPLEMENTED
 //#define POSITION_CONTROL
-#define MAX_SPEED 12000
-#define MIN_SPEED 800
+#define MAX_SPEED 10000
+#define MIN_SPEED 30
 #define MAX_ACCEL 32767
 #define MAX_DECEL 32767
 #define MAX_TORQUE_CONFIG 800 					// 400 Selected Value for normal control operation
@@ -107,7 +109,7 @@ typedef struct {
 #define STEPS_PER_TURN 3200
 
 
-#define HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))
+#define __HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

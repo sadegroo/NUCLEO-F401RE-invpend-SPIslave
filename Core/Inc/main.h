@@ -41,6 +41,7 @@ extern "C" {
 #include "x_nucleo_ihmxx.h"
 #include "x_nucleo_ihm01a1_stm32f4xx.h"
 #include "l6474_acceleration_control.h"
+#include <chrono.h>
 
 /* USER CODE END Includes */
 
@@ -63,7 +64,6 @@ typedef struct {
     bool handled_peak;
     bool zero_crossed;
     const int counts_per_turn;		//
-
 } Quadrature_Encoder_TypeDef;
 
 /* USER CODE END ET */
@@ -85,7 +85,8 @@ typedef struct {
 		);\
 } while(0)
 
-#define FLT_EPSILON 0x1p-23
+// program flow
+#define START_STATE_MAIN 0
 
 #define T_SAMPLE 0.001 // should match the sample time in MATLAB model
 
@@ -109,7 +110,7 @@ typedef struct {
 #define STEPS_PER_TURN 3200
 #define ROTOR_ANGLE_READ_DECIMATION  1000000			// only read rotor every X cycles
 
-#define MAX_DEFLECTION_REV 1000.0	// maximum deflection of the rotor before hard stop
+#define MAX_DEFLECTION_REV 10.0	// maximum deflection of the rotor before hard stop
 
 
 #define __HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))

@@ -131,19 +131,13 @@ int main(void)
   int  uart_buf_len;
   int encoder_range_error;
 
-  //uint8_t state_main = 0;
-  uint8_t state_main = 200;
+  uint8_t state_main = START_STATE_MAIN;
   uint32_t state_main_counter = 0; // counts the amount of times the same state was entered
-  uint32_t state_cycle_cnt = 0; // counts the amount of times the circular part of ste main state machine is looped
+  uint32_t state_cycle_cnt = 0; // counts the amount of times the circular part of the main state machine is looped
+  static Chrono_TypeDef main_cycletimer= {0,0,0.0}; //Chronometer for circular part of the main state machine
   uint8_t state_uart = 0;
   uint32_t err_cnt = 0;
   uint32_t overtime_cnt = 0;
-
-  uint32_t suc_cnt = 0;
-
-  uint32_t last_tick; // Store the initial tick value
-  //uint32_t timemark1;
-  //uint32_t timemark2;
 
   for(int i=0;i<SPI_BUFFER_SIZE;i++)
   {
@@ -197,9 +191,13 @@ int main(void)
   BSP_MotorControl_WaitWhileActive(0);
   BSP_MotorControl_GoTo(0, 0);
   BSP_MotorControl_WaitWhileActive(0);
+  HAL_Delay(2000); // wait for pendulum to settle
 
   //initialize acceleration control
   Init_L6472_Acceleration_Control(&gAccelControlInitParams);
+
+  //init chronometer
+  Chrono_Init();
 
   /* USER CODE END SysInit */
 
@@ -297,14 +295,18 @@ int main(void)
 		{
 		// sequential states
 		//-------------------
-		  case 200:
-			  // wait for DMA SPI to have valid date
+		  case 0:
+			  // START state: wait for DMA SPI to have valid date
 			  if (spi_txrx_flag == 1){
-				  state_main++;
+				  state_main=1;
+				  Chrono_Mark(&main_cycletimer);
+				  uart_buf_len = sprintf(uart_buf, "SPI connection established. Starting system... \r\n");
+				  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
 			  }
 			  break;
+
 		  case 201:
-			  // run through the init staps of acceleration control
+			  // run through the init steps of acceleration control
 			  if (Run_L6472_Acceleration_Control(recv_number1) == 10){
 				  state_main++;
 				  state_main_counter =0;
@@ -345,46 +347,41 @@ int main(void)
 			  break;
 		// looping states
 		//-----------------
-		  case 0:
+		  case 1:
 			// Read encoder and rotor
 			encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
 			rotor_position_read(&tmp_float);
 			send_number2 = tmp_float;
 			send_number1 = encoder_inst.position;
 			state_main++;
-			state_main_counter = 0;
 			break;
-		  case 1:
-			  /*
-			  state_main_counter++;
-
-			if (state_main_counter >= ROTOR_ANGLE_READ_DECIMATION){
-				// because of too much SPI overhead otherwise
-				rotor_position_read(&tmp_float);
-				send_number2 = tmp_float;
-				state_main_counter = 0;
-			}
-			*/
-
+		  case 2:
 			if (spi_txrx_flag == 1){
 				spi_txrx_flag = 0;
-			  // reset spi_txrx_flag that acts as a heartbeat at the matlab sample rate
-				 /* timing issues!
+				state_main=4;
+			}
+			// keep track of waiting time in this state
+			if (Chrono_GetDiffNoMark(&main_cycletimer) > 1.5 * T_SAMPLE) {
+				 overtime_cnt++;
+				 state_main=3;
+				 uart_buf_len = sprintf(uart_buf, "overtime: %d\r\n", overtime_cnt);
+				 HAL_UART_Transmit_IT(&huart2, (uint8_t *)uart_buf, uart_buf_len);
+			 }
+			break;
 
-				 timemark1 = DWT->CYCCNT;
-				 timemark2 = timemark1 - last_tick;
-				 last_tick = DWT->CYCCNT;
-				 if (timemark2 > 1.5 * T_SAMPLE * RCC_SYS_CLOCK_FREQ) {
-					 overtime_cnt++;
-					 //uart_buf_len = sprintf(uart_buf, "overtime: %d, counter: %d\r\n", timemark2, overtime_cnt);
-					 //HAL_UART_Transmit_IT(&huart2, (uint8_t *)uart_buf, uart_buf_len);
-				 }
-					 */
-				state_main++;
+		  case 3:
+			  // keep periodically reading rotor to check for overrange
+			 if (Chrono_GetDiffNoMark(&main_cycletimer) > 0.05) {
+				 Chrono_Mark(&main_cycletimer);
+				 rotor_position_read(&tmp_float);
+			 }
+			if (spi_txrx_flag == 1){
+				spi_txrx_flag = 0;
+				Chrono_Mark(&main_cycletimer);
+				state_main=4;
 			}
 			break;
-			// Go to next state: copy tx/rx and control actions
-		  case 2:
+		  case 4:
 			  // control actions
 
 #ifdef POSITION_CONTROL
@@ -397,8 +394,9 @@ int main(void)
 
 				Run_L6472_Acceleration_Control(recv_number1 * STEPS_PER_TURN);
 #endif
-				state_main = 0;
+				state_main = 1;
 				state_cycle_cnt++;
+				Chrono_Mark(&main_cycletimer);
 			  break;
 		  case 50:
 			  // Rotor out of safe range
@@ -424,7 +422,6 @@ int main(void)
 		spi_err_flag = 0; // Clear flag
 
 	   }
-	  }
 
   } // close while(1)
   /* USER CODE END 3 */
@@ -732,8 +729,6 @@ void rotor_position_read(float * angle) {
 	stepcount = BSP_MotorControl_GetPosition(0);
 	*angle = (float) stepcount / (float) STEPS_PER_TURN;
 }
-
-
 
 __STATIC_INLINE void DWT_Delay_us(volatile uint32_t microseconds)
 {

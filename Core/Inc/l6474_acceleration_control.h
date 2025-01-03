@@ -14,11 +14,9 @@ extern "C" {
 #include "l6474.h"
 #include "x_nucleo_ihm01a1_stm32f4xx.h"
 #include "x_nucleo_ihmxx.h"
+#include <chrono.h>
 
 // defines
-#define RCC_SYS_CLOCK_FREQ 84000000 // should equal HAL_RCC_GetSysClockFreq()
-#define RCC_HCLK_FREQ 84000000 // should equal HAL_RCC_GetHCLKFreq()
-// acceleration control
 #define ARM_MATH_CM4
 #define ACCEL_CONTROL_DATA 0		// Set to 1 for display of timing data
 #define PWM_COUNT_SAFETY_MARGIN 2
@@ -31,9 +29,6 @@ typedef struct {
 	uint32_t desired_pwm_period;
 	float desired_pwm_period_float;
 	uint32_t current_pwm_period;
-	uint32_t integrate_start_time;
-	uint32_t clock_int_time;
-	uint32_t clock_int_tick;
 	float target_velocity_prescaled;
 	float acceleration; // in microsteps/s^2
 	float velocity;	// in microsteps/s
@@ -58,6 +53,7 @@ typedef struct {
 void Init_L6472_Acceleration_Control(L6474_Acceleration_Control_Init_TypeDef *gInitParams);
 uint8_t Run_L6472_Acceleration_Control(float acc);
 void Update_L6472_Acceleration_Control(void);
+float GetSampleTime_L6472_Acceleration_Control(void);
 
 // extern function prototypes
 extern void L6474_StartMovement_InstantSteady(uint8_t deviceId);

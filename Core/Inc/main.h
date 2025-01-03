@@ -102,11 +102,14 @@ typedef struct {
 //#define POSITION_CONTROL
 #define MAX_SPEED 10000
 #define MIN_SPEED 30
-#define MAX_ACCEL 32767
-#define MAX_DECEL 32767
+#define MAX_ACCEL 32767 //uint16 max
+#define MAX_DECEL 32767 //uint16 max
 #define MAX_TORQUE_CONFIG 800 					// 400 Selected Value for normal control operation
 #define OVERCURRENT_THRESHOLD 2000				// 2000 Selected Value for Integrated Rotary Inverted Pendulum System
 #define STEPS_PER_TURN 3200
+#define ROTOR_ANGLE_READ_DECIMATION  1000000			// only read rotor every X cycles
+
+#define MAX_DEFLECTION_REV 1000.0	// maximum deflection of the rotor before hard stop
 
 
 #define __HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))

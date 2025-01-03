@@ -31,7 +31,7 @@ typedef struct {
 	uint32_t desired_pwm_period;
 	float desired_pwm_period_float;
 	uint32_t current_pwm_period;
-	uint32_t apply_acc_start_time;
+	uint32_t integrate_start_time;
 	uint32_t clock_int_time;
 	uint32_t clock_int_tick;
 	float target_velocity_prescaled;
@@ -41,11 +41,9 @@ typedef struct {
 	uint32_t max_speed; // in microsteps/s
 	uint32_t max_accel; // in microsteps/s^2
 	float t_sample; // in seconds
-	motorDir_t old_dir;
-	motorDir_t new_dir;
 	float speed_prescaled;
 	uint8_t update_flag;
-	uint8_t zero_received_flag;
+	uint8_t state;
 
 } L6474_Acceleration_Control_TypeDef;
 
@@ -58,11 +56,11 @@ typedef struct {
 
 // local function prototypes
 void Init_L6472_Acceleration_Control(L6474_Acceleration_Control_Init_TypeDef *gInitParams);
-void Integrate_L6472_Acceleration_Control(float acc);
+uint8_t Run_L6472_Acceleration_Control(float acc);
 void Update_L6472_Acceleration_Control(void);
 
 // extern function prototypes
-extern void BSP_MotorControl_CmdEnable(uint8_t deviceId);
+extern void L6474_StartMovement_InstantSteady(uint8_t deviceId);
 
 #ifdef __cplusplus
 }

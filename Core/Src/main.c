@@ -131,13 +131,19 @@ int main(void)
   int  uart_buf_len;
   int encoder_range_error;
 
-  uint8_t state_spi = 0;
+  //uint8_t state_main = 0;
+  uint8_t state_main = 200;
+  uint32_t state_main_counter = 0; // counts the amount of times the same state was entered
+  uint32_t state_cycle_cnt = 0; // counts the amount of times the circular part of ste main state machine is looped
   uint8_t state_uart = 0;
   uint32_t err_cnt = 0;
+  uint32_t overtime_cnt = 0;
+
   uint32_t suc_cnt = 0;
 
-  float velocity_setpoint =0.0;
-  float prev_velocity_setpoint =0.0;
+  uint32_t last_tick; // Store the initial tick value
+  //uint32_t timemark1;
+  //uint32_t timemark2;
 
   for(int i=0;i<SPI_BUFFER_SIZE;i++)
   {
@@ -187,7 +193,7 @@ int main(void)
   /* Attach the function Error_Handler (defined below) to the error Handler*/
   BSP_MotorControl_AttachErrorHandler(Error_Handler);
   BSP_MotorControl_SetHome(0, 0);
-  BSP_MotorControl_GoTo(0, 50); // wake-up move
+  BSP_MotorControl_GoTo(0, 100); // wake-up move
   BSP_MotorControl_WaitWhileActive(0);
   BSP_MotorControl_GoTo(0, 0);
   BSP_MotorControl_WaitWhileActive(0);
@@ -206,8 +212,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   // Say something
-  //uart_buf_len = sprintf(uart_buf, "Hello world!\r\n");
-  //HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
+  uart_buf_len = sprintf(uart_buf, "Hello world!\r\n");
+  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
 
   // Initialize encoder
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
@@ -227,6 +233,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+
 	  /*
 	   //test encoder only without SPI
 	  encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
@@ -251,9 +258,9 @@ int main(void)
 		  case 1:
 
 			// Print newline
-				switch(HAL_UART_GetState(&huart2))
+				switch(HAL_UART_Getstate(&huart2))
 				{
-				case HAL_UART_STATE_READY:
+				case HAL_UART_state_READY:
 					uart_buf_len = sprintf(uart_buf, "success: %d, errors: %d, motcmd = %.3f, encoder = %.3f, motfb = %.3f \r\n", (unsigned int)suc_cnt, (unsigned int)err_cnt, recv_number1, send_number1, send_number2);
 					HAL_UART_Transmit_IT(&huart2, (uint8_t *)uart_buf, uart_buf_len);
 
@@ -272,7 +279,7 @@ int main(void)
 				  state_uart = 0;
 				  break;
 			  }
-			  if (uart_err_flag && HAL_UART_GetState(&huart2) == HAL_UART_STATE_READY)
+			  if (uart_err_flag && HAL_UART_Getstate(&huart2) == HAL_UART_state_READY)
 			  {
 			  // Clear flag and try again
 				uart_err_flag = 0;
@@ -286,67 +293,139 @@ int main(void)
 		*/
 		//-----------------------------------------------
 		// Finite state machine to allow for non-blocking SPI transmit/receive
-		switch(state_spi)
+		switch(state_main)
 		{
+		// sequential states
+		//-------------------
+		  case 200:
+			  // wait for DMA SPI to have valid date
+			  if (spi_txrx_flag == 1){
+				  state_main++;
+			  }
+			  break;
+		  case 201:
+			  // run through the init staps of acceleration control
+			  if (Run_L6472_Acceleration_Control(recv_number1) == 10){
+				  state_main++;
+				  state_main_counter =0;
+			  }
+			  break;
+		  case 202:
+			  // positive acceleration jerk
+			  if (spi_txrx_flag) {
+				  Run_L6472_Acceleration_Control(2000.0);
+				  state_main_counter++;
+			  }
+			  if (state_main_counter >= 300){
+				  state_main++;
+				  state_main_counter = 0;
+			  }
+			  break;
+		  case 203:
+			  // negative acceleration jerk
+			  if (spi_txrx_flag) {
+				  Run_L6472_Acceleration_Control(-2000.0);
+				  state_main_counter++;
+			  }
+			  if (state_main_counter >= 600){
+				  state_main++;
+				  state_main_counter = 0;
+			  }
+			  break;
+		  case 204:
+			  // second positive acceleration jerk
+			  if (spi_txrx_flag) {
+				  Run_L6472_Acceleration_Control(2000.0);
+				  state_main_counter++;
+			  }
+			  if (state_main_counter >= 300){
+				  state_main=0;
+				  state_main_counter = 0;
+			  }
+			  break;
+		// looping states
+		//-----------------
 		  case 0:
-			// Read encoder
+			// Read encoder and rotor
 			encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
 			rotor_position_read(&tmp_float);
-			__disable_irq();
-			send_number1 = encoder_inst.position;
 			send_number2 = tmp_float;
-			__enable_irq();
-			state_spi++;
+			send_number1 = encoder_inst.position;
+			state_main++;
+			state_main_counter = 0;
+			break;
 		  case 1:
-			  // Wait for DMA to finish transmit/receive flag
-				if (spi_txrx_flag){
-					suc_cnt++;
-					spi_txrx_flag = 0;
-					state_spi++;
-				}
-				else
-				{
-					break;
-				}
+			  /*
+			  state_main_counter++;
+
+			if (state_main_counter >= ROTOR_ANGLE_READ_DECIMATION){
+				// because of too much SPI overhead otherwise
+				rotor_position_read(&tmp_float);
+				send_number2 = tmp_float;
+				state_main_counter = 0;
+			}
+			*/
+
+			if (spi_txrx_flag == 1){
+				spi_txrx_flag = 0;
+			  // reset spi_txrx_flag that acts as a heartbeat at the matlab sample rate
+				 /* timing issues!
+
+				 timemark1 = DWT->CYCCNT;
+				 timemark2 = timemark1 - last_tick;
+				 last_tick = DWT->CYCCNT;
+				 if (timemark2 > 1.5 * T_SAMPLE * RCC_SYS_CLOCK_FREQ) {
+					 overtime_cnt++;
+					 //uart_buf_len = sprintf(uart_buf, "overtime: %d, counter: %d\r\n", timemark2, overtime_cnt);
+					 //HAL_UART_Transmit_IT(&huart2, (uint8_t *)uart_buf, uart_buf_len);
+				 }
+					 */
+				state_main++;
+			}
+			break;
 			// Go to next state: copy tx/rx and control actions
 		  case 2:
-			  /*
-				// copy new data to SPI buffers
-				HAL_SPI_DMAPause(&hspi3);
-				//__disable_irq();
-				memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
-				memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
-				memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
-				memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
-				//__enable_irq();
-				HAL_SPI_DMAResume(&hspi3);
-				*/
-				state_spi = 0;
+			  // control actions
 
 #ifdef POSITION_CONTROL
 				//run control if motor inactive or standby
-				if(BSP_MotorControl_GetDeviceState(0) >= 8) {
+				if(BSP_MotorControl_GetDevicestate(0) >= 8) {
 					BSP_MotorControl_GoTo(0, (int32_t) (recv_number1 * STEPS_PER_TURN));
 				}
 #endif
 #ifdef ACCELERATION_CONTROL
 
-				Integrate_L6472_Acceleration_Control(recv_number1 * STEPS_PER_TURN);
-
-
+				Run_L6472_Acceleration_Control(recv_number1 * STEPS_PER_TURN);
 #endif
+				state_main = 0;
+				state_cycle_cnt++;
 			  break;
+		  case 50:
+			  // Rotor out of safe range
+			  BSP_MotorControl_HardStop(0);
+			  uart_buf_len = sprintf(uart_buf, "Error 50: Rotor out of safe range\r\n");
+			  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
+			  state_main=99;
+		  case 99:
+			  ;// do nothting wait state
 		  default:
 			  break;
+		}
+
+		// Error checks
+		if (state_main!=99 && fabs(tmp_float) > MAX_DEFLECTION_REV) {
+			// go to error state 50
+			state_main = 50;
 			}
+	  // count any communication errors
+	  if (spi_err_flag)
+	  {
+		err_cnt++;
+		spi_err_flag = 0; // Clear flag
 
-		  // count any communication errors
-		  if (spi_err_flag)
-		  {
-		  	err_cnt++;
-			spi_err_flag = 0; // Clear flag
+	   }
+	  }
 
-		   }
   } // close while(1)
   /* USER CODE END 3 */
 }
@@ -682,6 +761,7 @@ void HAL_SPI_TxRxCpltCallback (SPI_HandleTypeDef * hspi)
 	memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
 	memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
 	memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
+
 }
 
 void HAL_SPI_ErrorCallback (SPI_HandleTypeDef * hspi)

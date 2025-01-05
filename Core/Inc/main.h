@@ -110,7 +110,7 @@ typedef struct {
 #define STEPS_PER_TURN 3200
 #define ROTOR_ANGLE_READ_DECIMATION  1000000			// only read rotor every X cycles
 
-#define MAX_DEFLECTION_REV 10.0	// maximum deflection of the rotor before hard stop
+#define MAX_DEFLECTION_REV 10000.0	// maximum deflection of the rotor before hard stop
 
 
 #define __HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))

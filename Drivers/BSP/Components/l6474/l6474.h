@@ -620,6 +620,9 @@ void L6474_Reset(uint8_t deviceId);                   //Set the L6474 reset pin
 void L6474_ReleaseReset(uint8_t deviceId);            //Release the L6474 reset pin 
 void L6474_ResetAllDevices(void);                           //Reset all L6474 devices
 void L6474_Run(uint8_t deviceId, motorDir_t direction);     //Run the motor 
+void L6474_Run_InstantSteady(uint8_t deviceId, motorDir_t direction); //added function
+void L6474_SpoofMaxSpeed(uint8_t deviceId); // added function: spoof the current speed as max speed
+void L6474_SpoofSteady(uint8_t deviceId);
 bool L6474_SelectStepMode(uint8_t deviceId,           // Step mode selection
                           motorStepMode_t stepMod); 
 bool L6474_SetAcceleration(uint8_t deviceId,uint16_t newAcc); //Set the acceleration in pps^2

@@ -29,16 +29,19 @@ typedef struct {
 	uint32_t desired_pwm_period;
 	float desired_pwm_period_float;
 	uint32_t current_pwm_period;
-	float target_velocity_prescaled;
+	float target_velocity; // can be negative
 	float acceleration; // in microsteps/s^2
 	float velocity;	// in microsteps/s
 	uint32_t min_speed; // in microsteps/s
 	uint32_t max_speed; // in microsteps/s
 	uint32_t max_accel; // in microsteps/s^2
+	motorDir_t old_dir;
+	motorDir_t new_dir;
 	float t_sample; // in seconds
+	float speed; // always positive
 	float speed_prescaled;
-	uint8_t update_flag;
 	uint8_t state;
+	bool update_isr_flag;
 
 } L6474_Acceleration_Control_TypeDef;
 
@@ -51,8 +54,9 @@ typedef struct {
 
 // local function prototypes
 void Init_L6472_Acceleration_Control(L6474_Acceleration_Control_Init_TypeDef *gInitParams);
+void SetAccel_L6472_Acceleration_Control(float acc);
 uint8_t Run_L6472_Acceleration_Control(float acc);
-void Update_L6472_Acceleration_Control(void);
+void StepClockHandler_L6472_Acceleration_Control(void);
 float GetSampleTime_L6472_Acceleration_Control(void);
 
 // extern function prototypes

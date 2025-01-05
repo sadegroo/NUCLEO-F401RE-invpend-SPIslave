@@ -22,6 +22,7 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "l6474.h"
+#include <math.h>
 
 /* Private constants  ---------------------------------------------------------*/
 
@@ -945,6 +946,42 @@ void L6474_Run(uint8_t deviceId, motorDir_t direction)
 
 	/* Motor activation */
 	L6474_StartMovement(deviceId); 
+}
+
+/******************************************************//**
+ * @brief  Runs the motor at min speed and returns STEADY motorstate.
+ * @param[in] deviceId (from 0 to 2)
+ * @param[in] direction FORWARD or BACKWARD
+ * @retval None
+ **********************************************************/
+void L6474_Run_InstantSteady(uint8_t deviceId, motorDir_t direction)
+{
+  /* If required deactivate motor */
+  if (devicePrm[deviceId].motionState != INACTIVE)
+  {
+    L6474_HardStop(deviceId);
+  }
+
+	/* Direction setup */
+	L6474_SetDirection(deviceId,direction);
+
+	devicePrm[deviceId].commandExecuted = RUN_CMD;
+
+	/* Motor activation */
+	  /* Enable L6474 powerstage */
+	  L6474_CmdEnable(deviceId);
+	  devicePrm[deviceId].motionState = STEADY;
+	  devicePrm[deviceId].accu = 0;
+	  devicePrm[deviceId].relativePos = 0;
+	  L6474_ApplySpeed(deviceId, devicePrm[deviceId].minSpeed);
+}
+
+void L6474_SpoofMaxSpeed(uint8_t deviceId) {
+	devicePrm[deviceId].speed = devicePrm[deviceId].maxSpeed; //trick state machine into thinking it is running at max speed
+}
+
+void L6474_SpoofSteady(uint8_t deviceId) {
+	devicePrm[deviceId].motionState = STEADY;; //trick state machine into thinking it is running at max speed
 }
 
 /******************************************************//**
@@ -1914,6 +1951,107 @@ void L6474_StepClockHandler(uint8_t deviceId)
       break;
     }
   }  
+  /* Set isr flag */
+  isrFlag = FALSE;
+}
+
+/******************************************************//**
+ * @brief  Handles the device state machine at each step ACCELERATION CONTROL
+ * @param[in] deviceId (from 0 to 2)
+ * @retval None
+ * @note Must only be called by the timer ISR
+ **********************************************************/
+void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
+{
+  /* Set isr flag */
+  isrFlag = TRUE;
+
+  uint16_t speed = devicePrm[deviceId].speed;
+  uint32_t acc = ((uint32_t)fabs(acceleration) << 16);
+
+  if (speed < devicePrm[deviceId].maxSpeed && ((devicePrm[deviceId].direction == FORWARD && acceleration > 0)||((devicePrm[deviceId].direction == BACKWARD && acceleration < 0)))) {
+ 	  devicePrm[deviceId].motionState = ACCELERATING;
+   } else if ((devicePrm[deviceId].direction == FORWARD && acceleration < 0)||((devicePrm[deviceId].direction == BACKWARD && acceleration > 0))) {
+ 	  devicePrm[deviceId].motionState = DECELERATING;
+   } else {
+ 	  devicePrm[deviceId].motionState = STEADY;
+   }
+
+  switch (devicePrm[deviceId].motionState)
+  {
+    case ACCELERATING:
+    {
+		  bool speedUpdated = FALSE;
+		  /* Go on accelerating */
+		  if (speed == 0) speed =1;
+		  devicePrm[deviceId].accu += acc / speed;
+		  while (devicePrm[deviceId].accu >= (0X10000L))
+		  {
+			devicePrm[deviceId].accu -= (0X10000L);
+			speed +=1;
+			speedUpdated = TRUE;
+		  }
+
+		  if (speedUpdated)
+		  {
+			if (speed > devicePrm[deviceId].maxSpeed)
+			{
+			  speed = devicePrm[deviceId].maxSpeed;
+			}
+			devicePrm[deviceId].speed = speed;
+			L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed);
+		  }
+        break;
+    }
+    case STEADY:
+    {
+    	// do nothing
+      break;
+    }
+    case DECELERATING:
+    {
+        /* Go on decelerating */
+        if (speed > devicePrm[deviceId].minSpeed)
+        {
+          bool speedUpdated = FALSE;
+          if (speed == 0) speed =1;
+          devicePrm[deviceId].accu += acc / speed;
+          while (devicePrm[deviceId].accu >= (0X10000L))
+          {
+            devicePrm[deviceId].accu -= (0X10000L);
+            if (speed > 1)
+            {
+              speed -=1;
+            }
+            speedUpdated = TRUE;
+          }
+
+          if (speedUpdated)
+          {
+            if (speed < devicePrm[deviceId].minSpeed)
+            {
+              speed = devicePrm[deviceId].minSpeed;
+              // Direction change
+              if (devicePrm[deviceId].direction == FORWARD && acceleration < 0) {
+            	  L6474_Board_SetDirectionGpio(0, BACKWARD);
+            	  devicePrm[deviceId].direction = BACKWARD;
+              }
+              else if (devicePrm[deviceId].direction == BACKWARD && acceleration > 0) {
+             	 L6474_Board_SetDirectionGpio(0, FORWARD);
+             	devicePrm[deviceId].direction = FORWARD;
+              }
+            }
+            devicePrm[deviceId].speed = speed;
+            L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed);
+          }
+        }
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
   /* Set isr flag */
   isrFlag = FALSE;
 }

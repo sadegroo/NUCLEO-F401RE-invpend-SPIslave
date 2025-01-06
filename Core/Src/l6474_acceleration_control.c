@@ -9,78 +9,74 @@ extern void BSP_MotorControl_StepClockHandler(uint8_t deviceId); // standard ste
 extern void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration); // alternative stepclockhandler for acceleration control
 
 
-void Init_L6472_Acceleration_Control(L6474_Acceleration_Control_Init_TypeDef *gInitParams) {
+void Init_L6472_Acceleration_Control(L6474_Init_t *gInitParams, float t_sample) {
 
-	  // Initialize PWM period variables used by step interrupt
-	  hAccelCtrl.desired_pwm_period = UINT32_MAX;
-	  hAccelCtrl.current_pwm_period = UINT32_MAX;
-	  hAccelCtrl.target_velocity = 0.0;
-	  hAccelCtrl.speed = gInitParams->min_speed;
+	/// Acceleration rate in step/s2. Range: (0..+inf).
+	hAccelCtrl.max_accel = gInitParams->acceleration_step_s2;
+	/// DECELERATION is ignored for acceleration control
 
-	  hAccelCtrl.t_sample = gInitParams->t_sample;
-	  hAccelCtrl.min_speed = gInitParams->min_speed;
-	  hAccelCtrl.max_speed = gInitParams->max_speed;
-	  hAccelCtrl.max_accel = gInitParams->max_accel;
+	/// Maximum speed in step/s. Range: (30..10000].
+	hAccelCtrl.max_speed = gInitParams->maximum_speed_step_s;
+	 ///Minimum speed in step/s. Range: [30..10000).
+	hAccelCtrl.min_speed = gInitParams->minimum_speed_step_s;
 
-	  hAccelCtrl.old_dir = UNKNOW_DIR;
-	  hAccelCtrl.new_dir = UNKNOW_DIR;
-	  hAccelCtrl.state = 0;
-	  hAccelCtrl.update_isr_flag = FALSE;
 
+	  hAccelCtrl.speed = 0;
+
+	  hAccelCtrl.t_sample = t_sample;
 	  cycletimer.t_diff_s = hAccelCtrl.t_sample;
 
+	  hAccelCtrl.state = 0;
+
+	  // old inits
+	  //hAccelCtrl.min_speed = gInitParams->min_speed;
+	  //hAccelCtrl.max_speed = gInitParams->max_speed;
+	  //hAccelCtrl.max_accel = gInitParams->max_accel;
+
+	  //hAccelCtrl.old_dir = UNKNOW_DIR;
+	  //hAccelCtrl.new_dir = UNKNOW_DIR;
+	  //hAccelCtrl.update_isr_flag = FALSE;
+	  // Initialize PWM period variables used by step interrupt
+	  //hAccelCtrl.desired_pwm_period = UINT32_MAX;
+	  //hAccelCtrl.current_pwm_period = UINT32_MAX;
+	  //hAccelCtrl.target_velocity = 0.0;
+
+
 }
 
-void SetAccel_L6472_Acceleration_Control(float acc) {
-	// clamp acceleration
-	if (acc > (float) hAccelCtrl.max_accel) {
-		hAccelCtrl.acceleration = (float) hAccelCtrl.max_accel;
-	} else if (acc < -1.0*(float) hAccelCtrl.max_accel) {
-		hAccelCtrl.acceleration = -1.0* (float) hAccelCtrl.max_accel;
-	} else {
-		hAccelCtrl.acceleration = acc;
-	}
+void Stop__L6472_Acceleration_Control(void){
+	BSP_MotorControl_HardStop(0);
+	ISR_cmd = 0;
+	hAccelCtrl.state = 0;
+
 }
 
-uint8_t Run_L6472_Acceleration_Control(float acc) {
+void Run_L6472_Acceleration_Control(float acceleration_input) {
 
 	switch (hAccelCtrl.state) {
 	case 0: // first call
-		hAccelCtrl.state = 1;
-		//BSP_MotorControl_SetMaxSpeed(0,hAccelCtrl.min_speed+1);
-		//L6474_Run_InstantSteady(0,FORWARD);
-		L6474_SetMaxSpeed(0,hAccelCtrl.min_speed+1);
-		//BSP_MotorControl_Run(0,FORWARD);
-		L6474_Run(0,FORWARD);
-		//ISRFlag = FALSE;
-		break;
-	case 1:
-		if (BSP_MotorControl_GetCurrentSpeed(0) >= hAccelCtrl.min_speed) {
-			hAccelCtrl.state = 2;
-			ISR_cmd = 1;
-			//__disable_irq();
-			L6474_SetMaxSpeed(0,hAccelCtrl.max_speed);
-			//__enable_irq();
-			ISRFlag = FALSE;
-		}
-		break;
-	case 2:
-		if (ISRFlag){
-			hAccelCtrl.state = 9;
-			//L6474_SpoofMaxSpeed(0);
-			ISRFlag = FALSE;
-			ISR_cmd = 2;
-			//hAccelCtrl.update_isr_flag = TRUE;
-		}
-		break;
-	case 9:
-		Chrono_Mark(&cycletimer);
 		hAccelCtrl.state = 10;
-		// no break
+		ISR_cmd = 1;
+		BSP_MotorControl_Run(0,FORWARD);
+		ISRFlag = FALSE;
+		Chrono_Mark(&cycletimer);
+		break;
 	case 10:
-		// normal operation
+		if (ISRFlag) {
+			// normal operation
+			hAccelCtrl.t_sample = Chrono_GetDiffMark(&cycletimer);
 
-		/*
+		  // clamp acceleration
+		  if (acceleration_input > (float) hAccelCtrl.max_accel) {
+			  hAccelCtrl.acceleration = (float) hAccelCtrl.max_accel;
+		  } else if (acceleration_input < -1.0*(float) hAccelCtrl.max_accel) {
+			  hAccelCtrl.acceleration = -1.0* (float) hAccelCtrl.max_accel;
+		  } else {
+			  hAccelCtrl.acceleration = acceleration_input;
+		  }
+		}
+
+		/* old way below
 
 		//get sample time
 		hAccelCtrl.t_sample = Chrono_GetDiffMark(&cycletimer);
@@ -121,12 +117,20 @@ uint8_t Run_L6472_Acceleration_Control(float acc) {
 		}
 		hAccelCtrl.velocity = (float) RCC_SYS_CLOCK_FREQ / (float) hAccelCtrl.current_pwm_period / (float) TIMER_PRESCALER / (float) BSP_MOTOR_CONTROL_BOARD_PWM1_FREQ_RESCALER;
 		*/
+
+		// functions used before
+		//BSP_MotorControl_SetMaxSpeed(0,hAccelCtrl.min_speed+1);
+		//L6474_Run_InstantSteady(0,FORWARD);
+		//L6474_SetMaxSpeed(0,hAccelCtrl.min_speed+1);
+		//BSP_MotorControl_Run(0,FORWARD);
+		//L6474_Run(0,FORWARD);
+		//ISRFlag = FALSE;
+		//L6474_SpoofMaxSpeed(0);
+
 		break;
 	default:
 		break;
 	}
-
-	return hAccelCtrl.state;
 }
 
 void StepClockHandler_L6472_Acceleration_Control(void) {
@@ -140,7 +144,7 @@ void StepClockHandler_L6472_Acceleration_Control(void) {
 	case 1: // acceleration mode
 		L6474_StepClockHandler_alt(0, hAccelCtrl.acceleration);
 		break;
-		/*
+		/* old way below
 	case 2:
 		//if (hAccelCtrl.new_dir != hAccelCtrl.old_dir){
 			if (hAccelCtrl.new_dir == FORWARD){

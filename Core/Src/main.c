@@ -57,8 +57,8 @@ volatile uint8_t spi_err_flag = 0;
 
 static uint8_t spi_rx_buf[SPI_BUFFER_SIZE];
 static uint8_t spi_tx_buf[SPI_BUFFER_SIZE];
-static float recv_number1=0.0;   // stepper motor acceleration command in rad/s^2
-static float recv_number2=0.0;
+static float recv_number1=0.0;   // stepper motor acceleration command in rev/s^2
+static float recv_number2=0.0;	// no use for this yet
 static float send_number1;	    // encoder position in revolutions
 static float send_number2;       // stepper motor angle in revolutions
 static float tmp_float;
@@ -92,13 +92,6 @@ L6474_Init_t gL6474InitParams =
     L6474_ALARM_EN_WRONG_NPERF_CMD)    /// Alarm (ALARM_EN register).
 };
 
-L6474_Acceleration_Control_Init_TypeDef gAccelControlInitParams =
-{
-	MIN_SPEED,
-	MAX_SPEED,
-	MAX_ACCEL,
-	T_SAMPLE
-};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -132,10 +125,10 @@ int main(void)
   int encoder_range_error;
 
   uint8_t state_main = START_STATE_MAIN;
-  uint32_t state_main_counter = 0; // counts the amount of times the same state was entered
+  //uint32_t state_main_counter = 0; // counts the amount of times the same state was entered
   uint32_t state_cycle_cnt = 0; // counts the amount of times the circular part of the main state machine is looped
   static Chrono_TypeDef main_cycletimer= {0,0,0.0}; //Chronometer for circular part of the main state machine
-  uint8_t state_uart = 0;
+ // uint8_t state_uart = 0;
   uint32_t err_cnt = 0;
   uint32_t overtime_cnt = 0;
 
@@ -194,7 +187,7 @@ int main(void)
   HAL_Delay(2000); // wait for pendulum to settle
 
   //initialize acceleration control
-  Init_L6472_Acceleration_Control(&gAccelControlInitParams);
+  Init_L6472_Acceleration_Control(&gL6474InitParams, T_SAMPLE);
 
   //init chronometer
   Chrono_Init();
@@ -302,47 +295,6 @@ int main(void)
 				  Chrono_Mark(&main_cycletimer);
 				  uart_buf_len = sprintf(uart_buf, "SPI connection established. Starting system... \r\n");
 				  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
-			  }
-			  break;
-
-		  case 201:
-			  // run through the init steps of acceleration control
-			  if (Run_L6472_Acceleration_Control(recv_number1) == 10){
-				  state_main++;
-				  state_main_counter =0;
-			  }
-			  break;
-		  case 202:
-			  // positive acceleration jerk
-			  if (spi_txrx_flag) {
-				  Run_L6472_Acceleration_Control(2000.0);
-				  state_main_counter++;
-			  }
-			  if (state_main_counter >= 300){
-				  state_main++;
-				  state_main_counter = 0;
-			  }
-			  break;
-		  case 203:
-			  // negative acceleration jerk
-			  if (spi_txrx_flag) {
-				  Run_L6472_Acceleration_Control(-2000.0);
-				  state_main_counter++;
-			  }
-			  if (state_main_counter >= 600){
-				  state_main++;
-				  state_main_counter = 0;
-			  }
-			  break;
-		  case 204:
-			  // second positive acceleration jerk
-			  if (spi_txrx_flag) {
-				  Run_L6472_Acceleration_Control(2000.0);
-				  state_main_counter++;
-			  }
-			  if (state_main_counter >= 300){
-				  state_main=0;
-				  state_main_counter = 0;
 			  }
 			  break;
 		// looping states

@@ -90,7 +90,7 @@ typedef struct {
 
 #define T_SAMPLE 0.001 // should match the sample time in MATLAB model
 
-#define SPI_BUFFER_SIZE  8
+#define SPI_BUFFER_SIZE  12
 #define UART_BUFFER_SIZE  100
 #define UART_DECIMATION  2000
 

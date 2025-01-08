@@ -59,9 +59,12 @@ static uint8_t spi_rx_buf[SPI_BUFFER_SIZE];
 static uint8_t spi_tx_buf[SPI_BUFFER_SIZE];
 static float recv_number1=0.0;   // stepper motor acceleration command in rev/s^2
 static float recv_number2=0.0;	// no use for this yet
+static float recv_number3=0.0;	// no use for this yet
 static float send_number1;	    // encoder position in revolutions
 static float send_number2;       // stepper motor angle in revolutions
-static float tmp_float;
+static float send_number3;		// stepper motor angle in revolutions per second
+static float rotor_pos;
+static float rotor_vel;
 
 static volatile uint16_t gLastError;
 
@@ -103,7 +106,8 @@ static void MX_SPI3_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim3);
-void rotor_position_read(float * angle);
+float rotor_ReadPosition(void);
+float rotor_ReadVelocity(void);
 static void MyFlagInterruptHandler(void);
 /* USER CODE END PFP */
 
@@ -178,9 +182,11 @@ int main(void)
   BSP_MotorControl_AttachFlagInterrupt(MyFlagInterruptHandler);
 
   /* Attach the function Error_Handler (defined below) to the error Handler*/
+
+  // wake-up move
   BSP_MotorControl_AttachErrorHandler(Error_Handler);
   BSP_MotorControl_SetHome(0, 0);
-  BSP_MotorControl_GoTo(0, 100); // wake-up move
+  BSP_MotorControl_GoTo(0, 100);
   BSP_MotorControl_WaitWhileActive(0);
   BSP_MotorControl_GoTo(0, 0);
   BSP_MotorControl_WaitWhileActive(0);
@@ -225,15 +231,6 @@ int main(void)
 
     /* USER CODE BEGIN 3 */
 
-	  /*
-	   //test encoder only without SPI
-	  encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
-	  send_number1 = encoder_inst.position;
-	  memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
-	  uart_buf_len = sprintf(uart_buf, "txnumber = %.3f\r\n",send_number1);
-	  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 1000);
-	  HAL_Delay(1000);
-	  */
 	  // UART state machine
 	  /*
 		switch (state_uart)
@@ -283,7 +280,6 @@ int main(void)
 		} //close switch
 		*/
 		//-----------------------------------------------
-		// Finite state machine to allow for non-blocking SPI transmit/receive
 		switch(state_main)
 		{
 		// sequential states
@@ -300,11 +296,15 @@ int main(void)
 		// looping states
 		//-----------------
 		  case 1:
-			// Read encoder and rotor
+			// Read encoder
 			encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
-			rotor_position_read(&tmp_float);
-			send_number2 = tmp_float;
 			send_number1 = encoder_inst.position;
+			// read rotor speed
+			rotor_pos=rotor_ReadPosition();
+			send_number2 = rotor_pos;
+			// read rotor velocity
+			rotor_vel=rotor_ReadVelocity();
+			send_number3 = rotor_vel;
 			state_main++;
 			break;
 		  case 2:
@@ -325,7 +325,7 @@ int main(void)
 			  // keep periodically reading rotor to check for overrange
 			 if (Chrono_GetDiffNoMark(&main_cycletimer) > 0.05) {
 				 Chrono_Mark(&main_cycletimer);
-				 rotor_position_read(&tmp_float);
+				 rotor_pos = rotor_ReadPosition();
 			 }
 			if (spi_txrx_flag == 1){
 				spi_txrx_flag = 0;
@@ -363,7 +363,7 @@ int main(void)
 		}
 
 		// Error checks
-		if (state_main!=99 && fabs(tmp_float) > MAX_DEFLECTION_REV) {
+		if (state_main!=99 && fabs(rotor_pos) > MAX_DEFLECTION_REV) {
 			// go to error state 50
 			state_main = 50;
 			}
@@ -674,12 +674,24 @@ int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef
 	return range_error;
 }
 
-void rotor_position_read(float * angle) {
+float rotor_ReadPosition() {
 	// get current step count
 	int32_t stepcount;
 
 	stepcount = BSP_MotorControl_GetPosition(0);
-	*angle = (float) stepcount / (float) STEPS_PER_TURN;
+	return ((float) stepcount / (float) STEPS_PER_TURN);
+}
+
+float rotor_ReadVelocity() {
+	int32_t stepcountpersec;
+	float velocity;
+
+	stepcountpersec = BSP_MotorControl_GetCurrentSpeed(0); // always positive
+	velocity = (float) stepcountpersec / (float) STEPS_PER_TURN;
+	if (BSP_MotorControl_GetDirection(0) == BACKWARD) {
+		velocity = -1.0 * velocity;
+	}
+	return velocity;
 }
 
 __STATIC_INLINE void DWT_Delay_us(volatile uint32_t microseconds)
@@ -704,10 +716,14 @@ __STATIC_INLINE void DWT_Delay_until_cycle(volatile uint32_t cycle)
 void HAL_SPI_TxRxCpltCallback (SPI_HandleTypeDef * hspi)
 {
 	spi_txrx_flag = 1;
-	memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
-	memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
-	memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
-	memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
+	// copy send_numberx to tx buffer
+	memcpy(spi_tx_buf, &send_number1 , 4);
+	memcpy(&spi_tx_buf[4], &send_number2 , 4);
+	memcpy(&spi_tx_buf[8], &send_number3 , 4);
+	// copy rx buffer to recv_numberx
+	memcpy(&recv_number1, spi_rx_buf, 4);
+	memcpy(&recv_number2, &spi_rx_buf[4], 4);
+	memcpy(&recv_number3, &spi_rx_buf[8], 4);
 
 }
 

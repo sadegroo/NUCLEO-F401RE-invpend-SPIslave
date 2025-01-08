@@ -55,12 +55,18 @@ void Run_L6472_Acceleration_Control(float acceleration_input) {
 
 	switch (hAccelCtrl.state) {
 	case 0: // first call
-		hAccelCtrl.state = 10;
-		ISR_cmd = 1;
+		hAccelCtrl.state = 1;
+		ISR_cmd = 2;
 		BSP_MotorControl_Run(0,FORWARD);
 		ISRFlag = FALSE;
-		Chrono_Mark(&cycletimer);
 		break;
+	case 1:
+		if (ISRFlag) {
+			Chrono_Mark(&cycletimer);
+			ISR_cmd = 1;
+			ISRFlag = FALSE;
+			hAccelCtrl.state = 10;
+		}
 	case 10:
 		if (ISRFlag) {
 			// normal operation
@@ -143,6 +149,10 @@ void StepClockHandler_L6472_Acceleration_Control(void) {
 		break;
 	case 1: // acceleration mode
 		L6474_StepClockHandler_alt(0, hAccelCtrl.acceleration);
+		break;
+	case 2: // run at min speed
+		L6474_StepClockHandler_alt(0, hAccelCtrl.acceleration);
+		L6474_ApplySpeed(0, hAccelCtrl.min_speed);
 		break;
 		/* old way below
 	case 2:

@@ -57,14 +57,16 @@ volatile uint8_t spi_err_flag = 0;
 
 static uint8_t spi_rx_buf[SPI_BUFFER_SIZE];
 static uint8_t spi_tx_buf[SPI_BUFFER_SIZE];
-static float recv_number1=0.0;   // stepper motor acceleration command in rev/s^2
-static float recv_number2=0.0;	// no use for this yet
-static float recv_number3=0.0;	// no use for this yet
-static float send_number1;	    // encoder position in revolutions
-static float send_number2;       // stepper motor angle in revolutions
-static float send_number3;		// stepper motor angle in revolutions per second
-static float rotor_pos;
-static float rotor_vel;
+static int32_t recv_number1=0;   // stepper motor acceleration command in steps/s^2
+static int32_t recv_number2=0;   // no use for this yet
+static int32_t recv_number3=0;   // no use for this yet
+static int32_t send_number1;	   // encoder position in increments
+static int32_t send_number2;       // stepper motor angle in microsteps
+static int32_t send_number3;	   // stepper motor angle in microsteps per second
+
+static int32_t encoder_pos;
+static int32_t rotor_pos;
+static int32_t rotor_vel;
 
 static volatile uint16_t gLastError;
 
@@ -105,9 +107,7 @@ static void MX_USART2_UART_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim3);
-float rotor_ReadPosition(void);
-float rotor_ReadVelocity(void);
+uint8_t encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim3);
 static void MyFlagInterruptHandler(void);
 /* USER CODE END PFP */
 
@@ -126,7 +126,7 @@ int main(void)
   /* USER CODE BEGIN 1 */
   char uart_buf[UART_BUFFER_SIZE];
   int  uart_buf_len;
-  int encoder_range_error;
+  uint8_t encoder_range_error;
 
   uint8_t state_main = START_STATE_MAIN;
   //uint32_t state_main_counter = 0; // counts the amount of times the same state was entered
@@ -298,13 +298,18 @@ int main(void)
 		  case 1:
 			// Read encoder
 			encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
-			send_number1 = encoder_inst.position;
+			encoder_pos = encoder_inst.position_steps;
 			// read rotor speed
-			rotor_pos=rotor_ReadPosition();
-			send_number2 = rotor_pos;
+			rotor_pos = GetPosition_L6472_Acceleration_Control();
 			// read rotor velocity
-			rotor_vel=rotor_ReadVelocity();
+			rotor_vel = GetVelocity_L6472_Acceleration_Control();
+
+			__disable_irq();
+			send_number1 = encoder_pos;
+			send_number2 = rotor_pos;
 			send_number3 = rotor_vel;
+			__enable_irq();
+
 			state_main++;
 			break;
 		  case 2:
@@ -316,7 +321,8 @@ int main(void)
 			if (Chrono_GetDiffNoMark(&main_cycletimer) > 1.5 * T_SAMPLE) {
 				 overtime_cnt++;
 				 state_main=3;
-				 uart_buf_len = sprintf(uart_buf, "overtime: %d\r\n", overtime_cnt);
+				 uart_buf_len = sprintf(uart_buf, "overtime: %" PRIu32 "\r\n", overtime_cnt);
+				 //uart_buf_len = sprintf(uart_buf, "overtime: %u\r\n", overtime_cnt);
 				 HAL_UART_Transmit_IT(&huart2, (uint8_t *)uart_buf, uart_buf_len);
 			 }
 			break;
@@ -325,7 +331,7 @@ int main(void)
 			  // keep periodically reading rotor to check for overrange
 			 if (Chrono_GetDiffNoMark(&main_cycletimer) > 0.05) {
 				 Chrono_Mark(&main_cycletimer);
-				 rotor_pos = rotor_ReadPosition();
+				 rotor_pos = GetPosition_L6472_Acceleration_Control();
 			 }
 			if (spi_txrx_flag == 1){
 				spi_txrx_flag = 0;
@@ -344,7 +350,7 @@ int main(void)
 #endif
 #ifdef ACCELERATION_CONTROL
 
-				Run_L6472_Acceleration_Control(recv_number1 * STEPS_PER_TURN);
+				Run_L6472_Acceleration_Control(recv_number1);
 #endif
 				state_main = 1;
 				state_cycle_cnt++;
@@ -363,7 +369,7 @@ int main(void)
 		}
 
 		// Error checks
-		if (state_main!=99 && fabs(rotor_pos) > MAX_DEFLECTION_REV) {
+		if (state_main!=99 && labs(rotor_pos) > MAX_DEFLECTION_REV * STEPS_PER_TURN) {
 			// go to error state 50
 			state_main = 50;
 			}
@@ -611,16 +617,16 @@ static void MX_GPIO_Init(void)
  */
 
 
-int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim) {
+uint8_t encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim) {
 
 	int range_error = 0;
 	encoder->cnt3 = __HAL_TIM_GET_COUNTER(htim);
 
 	if (encoder->cnt3 >= 2147483648) {
-		encoder->position_steps = (int) (encoder->cnt3);
+		encoder->position_steps = (int32_t) encoder->cnt3;
 		encoder->position_steps = encoder->position_steps - 4294967297;
 	} else {
-		encoder->position_steps = (int) (encoder->cnt3);
+		encoder->position_steps = (int32_t) encoder->cnt3;
 	}
 
 	if (encoder->position_steps <= -2147483648) {
@@ -651,12 +657,12 @@ int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef
 	if (!encoder->peaked) // We don't need to evaluate anymore if we hit a maximum when we're still in downward motion and didn't cross the minimum
 	{
 		// Add global maximum
-		if (abs(encoder->position_steps) >= abs(encoder->global_max_position))
+		if (labs(encoder->position_steps) >= labs(encoder->global_max_position))
 		{
-			encoder->global_max_position = encoder->position;
+			encoder->global_max_position = encoder->position_steps;
 		}
 		// Check if new maximum
-		if (abs(encoder->position_steps) >= abs(encoder->max_position))
+		if (labs(encoder->position_steps) >= labs(encoder->max_position))
 		{
 			encoder->max_position = encoder->position_steps;
 		}
@@ -672,26 +678,6 @@ int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef
 
 
 	return range_error;
-}
-
-float rotor_ReadPosition() {
-	// get current step count
-	int32_t stepcount;
-
-	stepcount = BSP_MotorControl_GetPosition(0);
-	return ((float) stepcount / (float) STEPS_PER_TURN);
-}
-
-float rotor_ReadVelocity() {
-	int32_t stepcountpersec;
-	float velocity;
-
-	stepcountpersec = BSP_MotorControl_GetCurrentSpeed(0); // always positive
-	velocity = (float) stepcountpersec / (float) STEPS_PER_TURN;
-	if (BSP_MotorControl_GetDirection(0) == BACKWARD) {
-		velocity = -1.0 * velocity;
-	}
-	return velocity;
 }
 
 __STATIC_INLINE void DWT_Delay_us(volatile uint32_t microseconds)

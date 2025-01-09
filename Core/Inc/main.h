@@ -32,6 +32,7 @@ extern "C" {
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdint.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -49,21 +50,21 @@ extern "C" {
 /* USER CODE BEGIN ET */
 typedef struct {
     uint32_t cnt3;                            // Counter 3
-    int range_error;                          // Range error indicator
-    float position;                   // Current encoder position
-    int position_steps;               // Encoder position in steps
-    int position_init;                // Initial encoder position
-    int previous_position;            // Previous encoder position
-    int max_position;                 // Maximum encoder position
-    int global_max_position;          // Global maximum encoder position
-    int prev_global_max_position;     // Previous global maximum encoder position
-    int position_down;                // Downward encoder position
-    int position_curr;                // Current encoder position in integer
-    int position_prev;                // Previous encoder position in integer
+    uint8_t range_error;                          // Range error indicator
+    float position;                       // Current encoder position in revolutions
+    int32_t position_steps;               // Encoder position in steps
+    int32_t position_init;                // Initial encoder position
+    int32_t previous_position;            // Previous encoder position
+    int32_t max_position;                 // Maximum encoder position
+    int32_t global_max_position;          // Global maximum encoder position
+    int32_t prev_global_max_position;     // Previous global maximum encoder position
+    int32_t position_down;                // Downward encoder position
+    int32_t position_curr;                // Current encoder position in integer
+    int32_t position_prev;                // Previous encoder position in integer
     bool peaked;
     bool handled_peak;
     bool zero_crossed;
-    const int counts_per_turn;		//
+    const uint16_t counts_per_turn;		//
 } Quadrature_Encoder_TypeDef;
 
 /* USER CODE END ET */
@@ -110,7 +111,7 @@ typedef struct {
 #define STEPS_PER_TURN 3200
 #define ROTOR_ANGLE_READ_DECIMATION  1000000			// only read rotor every X cycles
 
-#define MAX_DEFLECTION_REV 10000.0	// maximum deflection of the rotor before hard stop
+#define MAX_DEFLECTION_REV 1000	// maximum deflection of the rotor before hard stop
 
 
 #define __HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))

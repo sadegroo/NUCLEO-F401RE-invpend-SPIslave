@@ -22,7 +22,6 @@
 
 /* Includes ------------------------------------------------------------------*/
 #include "l6474.h"
-#include <math.h>
 
 /* Private constants  ---------------------------------------------------------*/
 
@@ -102,7 +101,7 @@ void L6474_SetDeviceParamsToPredefinedValues(uint8_t deviceId);
 void L6474_SetDeviceParamsToGivenValues(uint8_t deviceId, L6474_Init_t *pInitPrm);
 void L6474_StartMovement(uint8_t deviceId);
 void L6474_StepClockHandler(uint8_t deviceId);  
-void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration);
+void L6474_StepClockHandler_alt(uint8_t deviceId, int32_t acceleration);
 uint8_t L6474_Ocd_Th_to_Par(float Tval);
 float L6474_Ocd_Par_to_Th(uint8_t Par);
 uint8_t L6474_Tval_Current_to_Par(float Tval);
@@ -1939,12 +1938,12 @@ void L6474_StepClockHandler(uint8_t deviceId)
  * @retval None
  * @note Must only be called by the timer ISR
  **********************************************************/
-void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
+void L6474_StepClockHandler_alt(uint8_t deviceId, int32_t acceleration)
 {
   /* Set isr flag */
   isrFlag = TRUE;
 
-  uint32_t acc = ((uint32_t)fabs(acceleration) << 16);
+  uint32_t acc = (labs(acceleration) << 16);
   uint16_t speed_accu = devicePrm[deviceId].speed_accu;
 
   if (speed_accu == 0) speed_accu = devicePrm[deviceId].speed;
@@ -1956,15 +1955,6 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
    } else {
  	  devicePrm[deviceId].motionState = STEADY;
    }
-
-  /*
-  if (devicePrm[deviceId].direction == FORWARD) {
-	  L6474_Board_SetDirectionGpio(0, FORWARD);
-  }
-  else {
-	  L6474_Board_SetDirectionGpio(0, BACKWARD);
-  }
-  */
 
   switch (devicePrm[deviceId].motionState)
   {
@@ -1989,18 +1979,15 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
 			devicePrm[deviceId].speed = speed_accu;
 			devicePrm[deviceId].speed_accu = speed_accu;
 			L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed);
-			//L6474_Board_Pwm1SetPeriod(84000000 / ( 1024 * devicePrm[deviceId].speed));
 		  }
         break;
     }
     case STEADY:
     {
-    	//L6474_Board_Pwm1SetPeriod(84000000 / ( 1024 * devicePrm[deviceId].speed));
       break;
     }
     case DECELERATING:
     {
-        /* Go on decelerating */
 
 		bool speedUpdated = FALSE;
 		bool directionChanged = FALSE;
@@ -2015,14 +2002,12 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
 			if (speed_accu == 0){
 				// Direction change
 				directionChanged = TRUE;
-				//L6474_ApplySpeed(deviceId, devicePrm[deviceId].minSpeed+1);
-				//devicePrm[deviceId].accu = 0;
 				  if (devicePrm[deviceId].direction == FORWARD)
 				  {
 					  L6474_Board_SetDirectionGpio(0, BACKWARD);
 					  devicePrm[deviceId].direction = BACKWARD;
 				  }
-				  else //if (devicePrm[deviceId].direction == BACKWARD)
+				  else
 				  {
 					 L6474_Board_SetDirectionGpio(0, FORWARD);
 					 devicePrm[deviceId].direction = FORWARD;
@@ -2045,9 +2030,7 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
 		{
 			devicePrm[deviceId].speed = devicePrm[deviceId].minSpeed+1;
 		}
-		L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed); // maybe causes a small glitch during reversal
-		//L6474_Board_Pwm1SetPeriod(84000000 / ( 1024 * devicePrm[deviceId].speed));
-		/* copy local accy back to struct */
+		L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed);
 		devicePrm[deviceId].speed_accu = speed_accu;
 	  }
       break;
@@ -2057,7 +2040,6 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
       break;
     }
   }
-
 
   /* Set isr flag */
   isrFlag = FALSE;

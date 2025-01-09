@@ -26,29 +26,26 @@ extern "C" {
 
 //typedefs
 typedef struct {
-	//uint32_t desired_pwm_period;
-	//float desired_pwm_period_float;
-	//uint32_t current_pwm_period;
-	//float target_velocity; // can be negative
-	float acceleration; // in microsteps/s^2
-	float velocity;	// in microsteps/s, can be positiva and negative
-
+	int32_t acceleration; // in microsteps/s^2, can be positive and negative
+	int32_t velocity;	// in microsteps/s, can be positive and negative
+	int32_t position;	// in microsteps, can be positive and negative
+	uint16_t speed; // in microsteps/s, always positive
 	uint16_t min_speed; // in microsteps/s
 	uint16_t max_speed; // in microsteps/s
 	uint16_t max_accel; // in microsteps/s^2
 	float t_sample; // in seconds
-	uint16_t speed; // in microsteps/s
-	//float speed_prescaled;
 	uint8_t state;
-	//bool update_isr_flag;
 
 } L6474_Acceleration_Control_TypeDef;
 
 // local function prototypes
 void Init_L6472_Acceleration_Control(L6474_Init_t *gInitParams, float t_sample);
-void Run_L6472_Acceleration_Control(float acceleration_input);
+void Run_L6472_Acceleration_Control(int32_t acceleration_input);
 void StepClockHandler_L6472_Acceleration_Control(void);
 float GetSampleTime_L6472_Acceleration_Control(void);
+int32_t GetPosition_L6472_Acceleration_Control(void);
+int32_t GetVelocity_L6472_Acceleration_Control(void);
+int32_t GetAcceleration_L6472_Acceleration_Control(void);
 
 // extern function prototypes
 

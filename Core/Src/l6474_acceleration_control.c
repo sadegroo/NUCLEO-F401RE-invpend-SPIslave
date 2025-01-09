@@ -6,7 +6,7 @@ static volatile bool ISRFlag = FALSE;
 static volatile uint8_t ISR_cmd = 0;
 
 extern void BSP_MotorControl_StepClockHandler(uint8_t deviceId); // standard stepclockhandler
-extern void L6474_StepClockHandler_alt(uint8_t deviceId, int32_t acceleration); // alternative stepclockhandler for acceleration control
+extern void L6474_StepClockHandler_alt(uint8_t deviceId, int16_t acceleration); // alternative stepclockhandler for acceleration control
 
 
 void Init_L6472_Acceleration_Control(L6474_Init_t *gInitParams, float t_sample) {
@@ -39,7 +39,7 @@ void Stop_L6472_Acceleration_Control(void){
 	hAccelCtrl.state = 0;
 }
 
-void Run_L6472_Acceleration_Control(int32_t acceleration_input) {
+void Run_L6472_Acceleration_Control(int16_t acceleration_input) {
 
 	switch (hAccelCtrl.state) {
 	case 0: // first call
@@ -54,12 +54,12 @@ void Run_L6472_Acceleration_Control(int32_t acceleration_input) {
 			hAccelCtrl.t_sample = Chrono_GetDiffMark(&cycletimer);
 
 		  // clamp acceleration
-		  if (acceleration_input > (int32_t) hAccelCtrl.max_accel) {
-			  hAccelCtrl.acceleration = (int32_t) hAccelCtrl.max_accel;
-		  } else if (acceleration_input < -1.0*(int32_t) hAccelCtrl.max_accel) {
-			  hAccelCtrl.acceleration = -1.0* (int32_t) hAccelCtrl.max_accel;
+		  if (acceleration_input > (int16_t) hAccelCtrl.max_accel) {
+			  hAccelCtrl.acceleration = (int16_t) hAccelCtrl.max_accel;
+		  } else if (acceleration_input < -1.0*(int16_t) hAccelCtrl.max_accel) {
+			  hAccelCtrl.acceleration = -1.0* (int16_t) hAccelCtrl.max_accel;
 		  } else {
-			  hAccelCtrl.acceleration = (int32_t) acceleration_input;
+			  hAccelCtrl.acceleration = acceleration_input;
 		  }
 		}
 
@@ -100,13 +100,14 @@ float GetSampleTime_L6472_Acceleration_Control(void) {
 
 int32_t GetPosition_L6472_Acceleration_Control(void){
  // warning, involves SPI, do not call every cycle
-	return BSP_MotorControl_GetPosition(0);
+	hAccelCtrl.position = BSP_MotorControl_GetPosition(0);
+	return hAccelCtrl.position;
 }
 
-int32_t GetVelocity_L6472_Acceleration_Control(void){
+int16_t GetVelocity_L6472_Acceleration_Control(void){
 	return hAccelCtrl.velocity;
 }
 
-int32_t GetAcceleration_L6472_Acceleration_Control(void){
+int16_t GetAcceleration_L6472_Acceleration_Control(void){
 	return hAccelCtrl.acceleration;
 }

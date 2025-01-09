@@ -26,8 +26,8 @@ extern "C" {
 
 //typedefs
 typedef struct {
-	int32_t acceleration; // in microsteps/s^2, can be positive and negative
-	int32_t velocity;	// in microsteps/s, can be positive and negative
+	int16_t acceleration; // in microsteps/s^2, can be positive and negative
+	int16_t velocity;	// in microsteps/s, can be positive and negative
 	int32_t position;	// in microsteps, can be positive and negative
 	uint16_t speed; // in microsteps/s, always positive
 	uint16_t min_speed; // in microsteps/s
@@ -40,12 +40,12 @@ typedef struct {
 
 // local function prototypes
 void Init_L6472_Acceleration_Control(L6474_Init_t *gInitParams, float t_sample);
-void Run_L6472_Acceleration_Control(int32_t acceleration_input);
+void Run_L6472_Acceleration_Control(int16_t acceleration_input);
 void StepClockHandler_L6472_Acceleration_Control(void);
 float GetSampleTime_L6472_Acceleration_Control(void);
 int32_t GetPosition_L6472_Acceleration_Control(void);
-int32_t GetVelocity_L6472_Acceleration_Control(void);
-int32_t GetAcceleration_L6472_Acceleration_Control(void);
+int16_t GetVelocity_L6472_Acceleration_Control(void);
+int16_t GetAcceleration_L6472_Acceleration_Control(void);
 
 // extern function prototypes
 

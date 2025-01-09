@@ -57,16 +57,18 @@ volatile uint8_t spi_err_flag = 0;
 
 static uint8_t spi_rx_buf[SPI_BUFFER_SIZE];
 static uint8_t spi_tx_buf[SPI_BUFFER_SIZE];
-static int32_t recv_number1=0;   // stepper motor acceleration command in steps/s^2
-static int32_t recv_number2=0;   // no use for this yet
-static int32_t recv_number3=0;   // no use for this yet
-static int32_t send_number1;	   // encoder position in increments
-static int32_t send_number2;       // stepper motor angle in microsteps
-static int32_t send_number3;	   // stepper motor angle in microsteps per second
+static int16_t recv_number1=0;   // stepper motor acceleration command in steps/s^2
+static int16_t recv_number2=0;   // no use for this yet
+static int16_t recv_number3=0;   // no use for this yet
+static int16_t send_number1=0;	   // encoder position in increments
+static int16_t send_number2=0;       // stepper motor angle in microsteps
+static int16_t send_number3=0;	   // stepper motor angle in microsteps per second
 
-static int32_t encoder_pos;
-static int32_t rotor_pos;
-static int32_t rotor_vel;
+static int16_t accel_cmd = 0;
+static int32_t encoder_pos=0;
+static int32_t rotor_pos=0;
+static int16_t rotor_vel=0;
+
 
 static volatile uint16_t gLastError;
 
@@ -109,6 +111,8 @@ static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
 uint8_t encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim3);
 static void MyFlagInterruptHandler(void);
+int32_t swap_Endians_32(int32_t value);
+int16_t swap_Endians_16(int16_t value);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -143,7 +147,7 @@ int main(void)
   }
 
   //Declare and initialize encoder
-  Quadrature_Encoder_TypeDef encoder_inst = {0,0,0,0,0,0,0,0,0,0,0,0,FALSE,FALSE,FALSE,COUNTS_PER_TURN};
+  Quadrature_Encoder_TypeDef encoder_inst = {0,0,0,0,0,0,0,0,0,0,0,0,0,FALSE,FALSE,FALSE,COUNTS_PER_TURN};
 
   /* USER CODE END 1 */
 
@@ -299,15 +303,15 @@ int main(void)
 			// Read encoder
 			encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
 			encoder_pos = encoder_inst.position_steps;
-			// read rotor speed
+			// read rotor position
 			rotor_pos = GetPosition_L6472_Acceleration_Control();
 			// read rotor velocity
 			rotor_vel = GetVelocity_L6472_Acceleration_Control();
 
 			__disable_irq();
-			send_number1 = encoder_pos;
-			send_number2 = rotor_pos;
-			send_number3 = rotor_vel;
+			send_number1 = swap_Endians_16((int16_t)encoder_pos);
+			send_number2 = swap_Endians_16((int16_t)rotor_pos);
+			send_number3 = swap_Endians_16(rotor_vel);
 			__enable_irq();
 
 			state_main++;
@@ -316,6 +320,9 @@ int main(void)
 			if (spi_txrx_flag == 1){
 				spi_txrx_flag = 0;
 				state_main=4;
+				__disable_irq();
+				accel_cmd = swap_Endians_16(recv_number1);
+				__enable_irq();
 			}
 			// keep track of waiting time in this state
 			if (Chrono_GetDiffNoMark(&main_cycletimer) > 1.5 * T_SAMPLE) {
@@ -337,6 +344,9 @@ int main(void)
 				spi_txrx_flag = 0;
 				Chrono_Mark(&main_cycletimer);
 				state_main=4;
+				__disable_irq();
+				accel_cmd = swap_Endians_16(recv_number1);
+				__enable_irq();
 			}
 			break;
 		  case 4:
@@ -345,12 +355,12 @@ int main(void)
 #ifdef POSITION_CONTROL
 				//run control if motor inactive or standby
 				if(BSP_MotorControl_GetDevicestate(0) >= 8) {
-					BSP_MotorControl_GoTo(0, (int32_t) (recv_number1 * STEPS_PER_TURN));
+					BSP_MotorControl_GoTo(0, (int32_t) (accel_cmd));
 				}
 #endif
 #ifdef ACCELERATION_CONTROL
 
-				Run_L6472_Acceleration_Control(recv_number1);
+				Run_L6472_Acceleration_Control(accel_cmd);
 #endif
 				state_main = 1;
 				state_cycle_cnt++;
@@ -620,27 +630,32 @@ static void MX_GPIO_Init(void)
 uint8_t encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim) {
 
 	int range_error = 0;
-	encoder->cnt3 = __HAL_TIM_GET_COUNTER(htim);
 
-	if (encoder->cnt3 >= 2147483648) {
-		encoder->position_steps = (int32_t) encoder->cnt3;
-		encoder->position_steps = encoder->position_steps - 4294967297;
-	} else {
-		encoder->position_steps = (int32_t) encoder->cnt3;
-	}
+	 // Read current counter value
+	    encoder->cnt3 = __HAL_TIM_GET_COUNTER(htim);
 
-	if (encoder->position_steps <= -2147483648) {
-		range_error = -1;
-		encoder->position_steps = -2147483648;
-	}
-	if (encoder->position_steps >= 2147483648) {
-		range_error = 1;
-		encoder->position_steps = 2147483648;
-	}
-	// Subtract zeroing offset
-	encoder->position_steps = encoder->position_steps - encoder->position_init;
-	// calculate in position in revolutions
-	encoder->position = (float) encoder->position_steps / (float) encoder->counts_per_turn;
+	    // Calculate delta explicitly with rollover handling
+	    int32_t delta = (int32_t)(encoder->cnt3 - encoder->previous_cnt3);
+
+	    encoder->position_steps += delta;
+
+	    // Update previous counter
+	    encoder->previous_cnt3 = encoder->cnt3;
+
+	    // Handle range limits
+	    if (encoder->position_steps < INT32_MIN) {
+	        range_error = -1;
+	        encoder->position_steps = INT32_MIN;
+	    } else if (encoder->position_steps > INT32_MAX) {
+	        range_error = 1;
+	        encoder->position_steps = INT32_MAX;
+	    }
+
+	    // Subtract zeroing offset
+	    encoder->position_steps -= encoder->position_init;
+
+	    // Calculate position in revolutions
+	    encoder->position = (float)encoder->position_steps / (float)encoder->counts_per_turn;
 
 	/*
 	 *  Detect if we passed the bottom, then re-arm peak flag
@@ -696,6 +711,50 @@ __STATIC_INLINE void DWT_Delay_until_cycle(volatile uint32_t cycle)
 	while (DWT->CYCCNT < cycle);
 }
 
+int32_t swap_Endians_32(int32_t value)
+{
+
+	int32_t leftmost_byte;
+	int32_t left_middle_byle;
+	int32_t right_middle_byte;
+	int32_t rightmost_byte;
+
+	int32_t result;
+
+    leftmost_byte = (value & 0x000000FF) >> 0;
+    left_middle_byle = (value & 0x0000FF00) >> 8;
+    right_middle_byte = (value & 0x00FF0000) >> 16;
+    rightmost_byte = (value & 0xFF000000) >> 24;
+    leftmost_byte <<= 24;
+    left_middle_byle <<= 16;
+    right_middle_byte <<= 8;
+    rightmost_byte <<= 0;
+
+    result = (leftmost_byte | left_middle_byle
+              | right_middle_byte | rightmost_byte);
+
+    return result;
+}
+
+int16_t swap_Endians_16(int16_t value)
+{
+
+	int16_t leftmost_byte;
+	int16_t rightmost_byte;
+
+	int16_t result;
+
+    leftmost_byte = (value & 0x00FF) >> 0;
+    rightmost_byte = (value & 0xFF00) >> 8;
+    leftmost_byte <<= 8;
+    rightmost_byte <<= 0;
+
+    result = (leftmost_byte | rightmost_byte);
+
+    return result;
+}
+
+
 //------------------------------------------------------
 // Callbacks
 
@@ -703,13 +762,13 @@ void HAL_SPI_TxRxCpltCallback (SPI_HandleTypeDef * hspi)
 {
 	spi_txrx_flag = 1;
 	// copy send_numberx to tx buffer
-	memcpy(spi_tx_buf, &send_number1 , 4);
-	memcpy(&spi_tx_buf[4], &send_number2 , 4);
-	memcpy(&spi_tx_buf[8], &send_number3 , 4);
+	memcpy(&spi_tx_buf[0], &send_number1 , 2);
+	memcpy(&spi_tx_buf[2], &send_number2 , 2);
+	memcpy(&spi_tx_buf[4], &send_number3 , 2);
 	// copy rx buffer to recv_numberx
-	memcpy(&recv_number1, spi_rx_buf, 4);
-	memcpy(&recv_number2, &spi_rx_buf[4], 4);
-	memcpy(&recv_number3, &spi_rx_buf[8], 4);
+	memcpy(&recv_number1, &spi_rx_buf[0], 2);
+	memcpy(&recv_number2, &spi_rx_buf[2], 2);
+	memcpy(&recv_number3, &spi_rx_buf[4], 2);
 
 }
 

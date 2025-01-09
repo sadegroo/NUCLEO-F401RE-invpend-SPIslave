@@ -101,7 +101,7 @@ void L6474_SetDeviceParamsToPredefinedValues(uint8_t deviceId);
 void L6474_SetDeviceParamsToGivenValues(uint8_t deviceId, L6474_Init_t *pInitPrm);
 void L6474_StartMovement(uint8_t deviceId);
 void L6474_StepClockHandler(uint8_t deviceId);  
-void L6474_StepClockHandler_alt(uint8_t deviceId, int32_t acceleration);
+void L6474_StepClockHandler_alt(uint8_t deviceId, int16_t acceleration);
 uint8_t L6474_Ocd_Th_to_Par(float Tval);
 float L6474_Ocd_Par_to_Th(uint8_t Par);
 uint8_t L6474_Tval_Current_to_Par(float Tval);
@@ -1938,13 +1938,14 @@ void L6474_StepClockHandler(uint8_t deviceId)
  * @retval None
  * @note Must only be called by the timer ISR
  **********************************************************/
-void L6474_StepClockHandler_alt(uint8_t deviceId, int32_t acceleration)
+void L6474_StepClockHandler_alt(uint8_t deviceId, int16_t acceleration)
 {
   /* Set isr flag */
   isrFlag = TRUE;
 
   uint32_t acc = (labs(acceleration) << 16);
   uint16_t speed_accu = devicePrm[deviceId].speed_accu;
+  uint16_t speed_divider = (speed_accu < devicePrm[deviceId].minSpeed) ? devicePrm[deviceId].minSpeed : speed_accu;
 
   if (speed_accu == 0) speed_accu = devicePrm[deviceId].speed;
 
@@ -1962,7 +1963,7 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, int32_t acceleration)
     {
 		  bool speedUpdated = FALSE;
 
-		  devicePrm[deviceId].accu += acc / speed_accu;
+		  devicePrm[deviceId].accu += acc / speed_divider;
 		  while (devicePrm[deviceId].accu >= (0X10000L))
 		  {
 			devicePrm[deviceId].accu -= (0X10000L);
@@ -1992,7 +1993,7 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, int32_t acceleration)
 		bool speedUpdated = FALSE;
 		bool directionChanged = FALSE;
 
-	  devicePrm[deviceId].accu += acc / speed_accu;
+	  devicePrm[deviceId].accu += acc / speed_divider;
 	  while (devicePrm[deviceId].accu >= (0X10000L))
 	  {
 		devicePrm[deviceId].accu -= (0X10000L);

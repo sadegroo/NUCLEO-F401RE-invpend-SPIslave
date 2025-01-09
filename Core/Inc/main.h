@@ -49,8 +49,9 @@ extern "C" {
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 typedef struct {
-    uint32_t cnt3;                            // Counter 3
-    uint8_t range_error;                          // Range error indicator
+	uint32_t cnt3;                        // Counter 3
+    uint32_t previous_cnt3;				  // Counter 3 of previous call
+    uint8_t range_error;                  // Range error indicator
     float position;                       // Current encoder position in revolutions
     int32_t position_steps;               // Encoder position in steps
     int32_t position_init;                // Initial encoder position
@@ -91,7 +92,7 @@ typedef struct {
 
 #define T_SAMPLE 0.001 // should match the sample time in MATLAB model
 
-#define SPI_BUFFER_SIZE  12
+#define SPI_BUFFER_SIZE   6
 #define UART_BUFFER_SIZE  100
 #define UART_DECIMATION  2000
 
@@ -109,9 +110,8 @@ typedef struct {
 #define MAX_TORQUE_CONFIG 800 					// 400 Selected Value for normal control operation
 #define OVERCURRENT_THRESHOLD 2000				// 2000 Selected Value for Integrated Rotary Inverted Pendulum System
 #define STEPS_PER_TURN 3200
-#define ROTOR_ANGLE_READ_DECIMATION  1000000			// only read rotor every X cycles
 
-#define MAX_DEFLECTION_REV 1000	// maximum deflection of the rotor before hard stop
+#define MAX_DEFLECTION_REV 10	// maximum deflection of the rotor before hard stop
 
 
 #define __HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))

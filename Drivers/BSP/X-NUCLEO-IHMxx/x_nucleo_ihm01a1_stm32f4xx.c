@@ -73,7 +73,7 @@ void L6474_Board_DisableIrq(void);              //Disable Irq
 void L6474_Board_EnableIrq(void);               //Enable Irq
 void L6474_Board_GpioInit(uint8_t deviceId);   //Initialise GPIOs used for L6474s
 uint32_t L6474_Board_Pwm1GetCounter(void);
-void L6474_Board_Pwm1SetPeriod(uint32_t period);
+void L6474_Board_Pwm1SetPeriod(uint32_t period, uint8_t firstcall);
 void L6474_Board_Pwm1SetFreq(uint16_t newFreq); //Set PWM1 frequency and start it
 void L6474_Board_Pwm2SetFreq(uint16_t newFreq); //Set PWM2 frequency and start it  
 void L6474_Board_Pwm3SetFreq(uint16_t newFreq); //Set PWM3 frequency and start it
@@ -214,11 +214,13 @@ uint32_t L6474_Board_Pwm1GetCounter() {
  * @param[in] period in counter increments
  * @retval None
  **********************************************************/
-void L6474_Board_Pwm1SetPeriod(uint32_t period)
+void L6474_Board_Pwm1SetPeriod(uint32_t period, uint8_t firstcall)
 {
   __HAL_TIM_SetAutoreload(&hTimPwm1, period-1);
-//  __HAL_TIM_SetCompare(&hTimPwm1, BSP_MOTOR_CONTROL_BOARD_CHAN_TIMER_PWM1, period >> 1);
-  if (hTimPwm1.Instance->CCER == 0) { // Check if a capture compare channel has not been enabled yet
+  if (firstcall == 1) {
+  __HAL_TIM_SetCompare(&hTimPwm1, BSP_MOTOR_CONTROL_BOARD_CHAN_TIMER_PWM1, (period-1) >> 1);
+  }
+  if (hTimPwm1.Instance->CCER == 0 || firstcall == 1) { // Check if a capture compare channel has not been enabled yet
 	  HAL_TIM_PWM_Start_IT(&hTimPwm1, BSP_MOTOR_CONTROL_BOARD_CHAN_TIMER_PWM1);
   }
 }

@@ -102,7 +102,7 @@ typedef struct {
 //#define VELOCITY_CONTROL // NOT IMPLEMENTED
 //#define POSITION_CONTROL
 #define MAX_SPEED 10000
-#define MIN_SPEED 30
+#define MIN_SPEED 32
 #define MAX_ACCEL 32767 //uint16 max
 #define MAX_DECEL 32767 //uint16 max
 #define MAX_TORQUE_CONFIG 800 					// 400 Selected Value for normal control operation

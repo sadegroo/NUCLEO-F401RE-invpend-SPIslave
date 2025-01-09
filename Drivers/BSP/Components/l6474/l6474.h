@@ -657,7 +657,7 @@ extern void L6474_Board_GpioInit(uint8_t deviceId);
 ///Get the current value of the counter used by PWM1
 extern uint32_t L6474_Board_Pwm1GetCounter(void);
 ///Set PWM1 period
-extern void L6474_Board_Pwm1SetPeriod(uint32_t period);
+extern void L6474_Board_Pwm1SetPeriod(uint32_t period, uint8_t firstcall);
 ///Set PWM1 frequency and start it
 extern void L6474_Board_Pwm1SetFreq(uint16_t newFreq);
 ///Set PWM2 frequency and start it  

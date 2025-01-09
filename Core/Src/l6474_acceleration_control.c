@@ -56,14 +56,14 @@ void Run_L6472_Acceleration_Control(float acceleration_input) {
 	switch (hAccelCtrl.state) {
 	case 0: // first call
 		hAccelCtrl.state = 1;
-		ISR_cmd = 2;
+		ISR_cmd = 1;
 		BSP_MotorControl_Run(0,FORWARD);
 		ISRFlag = FALSE;
 		break;
 	case 1:
 		if (ISRFlag) {
 			Chrono_Mark(&cycletimer);
-			ISR_cmd = 1;
+			ISR_cmd = 2;
 			ISRFlag = FALSE;
 			hAccelCtrl.state = 10;
 		}
@@ -142,6 +142,12 @@ void Run_L6472_Acceleration_Control(float acceleration_input) {
 void StepClockHandler_L6472_Acceleration_Control(void) {
 
 	ISRFlag = TRUE;
+	uint32_t period = 84000000 / ( 1024 * (uint32_t)BSP_MotorControl_GetCurrentSpeed(0));
+
+	if (hAccelCtrl.acceleration !=0)
+	{
+		ISRFlag = TRUE;;
+	}
 
 	switch (ISR_cmd){
 	case 0: // default stepclockhandler that does motion planning or wants to go to max speed
@@ -149,10 +155,11 @@ void StepClockHandler_L6472_Acceleration_Control(void) {
 		break;
 	case 1: // acceleration mode
 		L6474_StepClockHandler_alt(0, hAccelCtrl.acceleration);
+		L6474_Board_Pwm1SetPeriod(period, 0); // firstcall argument set
 		break;
 	case 2: // run at min speed
 		L6474_StepClockHandler_alt(0, hAccelCtrl.acceleration);
-		L6474_ApplySpeed(0, hAccelCtrl.min_speed);
+		L6474_Board_Pwm1SetPeriod(period, 0);
 		break;
 		/* old way below
 	case 2:

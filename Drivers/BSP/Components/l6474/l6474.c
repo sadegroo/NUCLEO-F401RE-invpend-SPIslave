@@ -1947,7 +1947,7 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
   uint32_t acc = ((uint32_t)fabs(acceleration) << 16);
   uint16_t speed_accu = devicePrm[deviceId].speed_accu;
 
-  if (speed_accu == 0) speed_accu =1;
+  if (speed_accu == 0) speed_accu = devicePrm[deviceId].speed;
 
   if (speed_accu < devicePrm[deviceId].maxSpeed && ((devicePrm[deviceId].direction == FORWARD && acceleration > 0)||((devicePrm[deviceId].direction == BACKWARD && acceleration < 0)))) {
  	  devicePrm[deviceId].motionState = ACCELERATING;
@@ -1957,12 +1957,14 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
  	  devicePrm[deviceId].motionState = STEADY;
    }
 
+  /*
   if (devicePrm[deviceId].direction == FORWARD) {
 	  L6474_Board_SetDirectionGpio(0, FORWARD);
   }
   else {
 	  L6474_Board_SetDirectionGpio(0, BACKWARD);
   }
+  */
 
   switch (devicePrm[deviceId].motionState)
   {
@@ -1986,15 +1988,14 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
 			}
 			devicePrm[deviceId].speed = speed_accu;
 			devicePrm[deviceId].speed_accu = speed_accu;
-			//L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed);
-			L6474_Board_Pwm1SetPeriod(roundf(84000000 / ( 1024 * devicePrm[deviceId].speed)));
+			L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed);
+			//L6474_Board_Pwm1SetPeriod(84000000 / ( 1024 * devicePrm[deviceId].speed));
 		  }
         break;
     }
     case STEADY:
     {
-    	// do nothing
-    	L6474_Board_Pwm1SetPeriod(roundf(84000000 / ( 1024 * devicePrm[deviceId].speed)));
+    	//L6474_Board_Pwm1SetPeriod(84000000 / ( 1024 * devicePrm[deviceId].speed));
       break;
     }
     case DECELERATING:
@@ -2014,16 +2015,16 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
 			if (speed_accu == 0){
 				// Direction change
 				directionChanged = TRUE;
-				speed_accu = 1;
-				devicePrm[deviceId].accu = 0;
+				//L6474_ApplySpeed(deviceId, devicePrm[deviceId].minSpeed+1);
+				//devicePrm[deviceId].accu = 0;
 				  if (devicePrm[deviceId].direction == FORWARD)
 				  {
-					  //L6474_Board_SetDirectionGpio(0, BACKWARD);
+					  L6474_Board_SetDirectionGpio(0, BACKWARD);
 					  devicePrm[deviceId].direction = BACKWARD;
 				  }
 				  else //if (devicePrm[deviceId].direction == BACKWARD)
 				  {
-					 //L6474_Board_SetDirectionGpio(0, FORWARD);
+					 L6474_Board_SetDirectionGpio(0, FORWARD);
 					 devicePrm[deviceId].direction = FORWARD;
 				  }
 			}
@@ -2035,7 +2036,7 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
 		speedUpdated = TRUE;
 
 	  }
-	  if (speedUpdated)
+	  if (speedUpdated && !(directionChanged))
 	  {
 		if (speed_accu > devicePrm[deviceId].minSpeed)
 		{
@@ -2044,8 +2045,8 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
 		{
 			devicePrm[deviceId].speed = devicePrm[deviceId].minSpeed+1;
 		}
-		//L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed); // maybe causes a small glitch during reversal
-		L6474_Board_Pwm1SetPeriod(roundf(84000000 / ( 1024 * devicePrm[deviceId].speed)));
+		L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed); // maybe causes a small glitch during reversal
+		//L6474_Board_Pwm1SetPeriod(84000000 / ( 1024 * devicePrm[deviceId].speed));
 		/* copy local accy back to struct */
 		devicePrm[deviceId].speed_accu = speed_accu;
 	  }
@@ -2056,6 +2057,7 @@ void L6474_StepClockHandler_alt(uint8_t deviceId, float acceleration)
       break;
     }
   }
+
 
   /* Set isr flag */
   isrFlag = FALSE;

@@ -32,6 +32,7 @@ extern "C" {
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include <stdint.h>
+#include <inttypes.h>
 #include <math.h>
 #include <stdlib.h>
 #include <stdio.h>
@@ -41,29 +42,30 @@ extern "C" {
 #include "x_nucleo_ihmxx.h"
 #include "x_nucleo_ihm01a1_stm32f4xx.h"
 #include "l6474_acceleration_control.h"
+#include <chrono.h>
 
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
 typedef struct {
-    uint32_t cnt3;                            // Counter 3
-    int range_error;                          // Range error indicator
-    float position;                   // Current encoder position
-    int position_steps;               // Encoder position in steps
-    int position_init;                // Initial encoder position
-    int previous_position;            // Previous encoder position
-    int max_position;                 // Maximum encoder position
-    int global_max_position;          // Global maximum encoder position
-    int prev_global_max_position;     // Previous global maximum encoder position
-    int position_down;                // Downward encoder position
-    int position_curr;                // Current encoder position in integer
-    int position_prev;                // Previous encoder position in integer
+	uint32_t cnt3;                        // Counter 3
+    uint32_t previous_cnt3;				  // Counter 3 of previous call
+    uint8_t range_error;                  // Range error indicator
+    float position;                       // Current encoder position in revolutions
+    int32_t position_steps;               // Encoder position in steps
+    int32_t position_init;                // Initial encoder position
+    int32_t previous_position;            // Previous encoder position
+    int32_t max_position;                 // Maximum encoder position
+    int32_t global_max_position;          // Global maximum encoder position
+    int32_t prev_global_max_position;     // Previous global maximum encoder position
+    int32_t position_down;                // Downward encoder position
+    int32_t position_curr;                // Current encoder position in integer
+    int32_t position_prev;                // Previous encoder position in integer
     bool peaked;
     bool handled_peak;
     bool zero_crossed;
-    const int counts_per_turn;		//
-
+    const uint16_t counts_per_turn;		//
 } Quadrature_Encoder_TypeDef;
 
 /* USER CODE END ET */
@@ -85,12 +87,13 @@ typedef struct {
 		);\
 } while(0)
 
-#define FLT_EPSILON 0x1p-23
+// program flow
+#define START_STATE_MAIN 0
 
 #define T_SAMPLE 0.001 // should match the sample time in MATLAB model
 
-#define SPI_BUFFER_SIZE  8
-#define UART_BUFFER_SIZE  100
+#define SPI_BUFFER_SIZE   6
+#define UART_BUFFER_SIZE  150
 #define UART_DECIMATION  2000
 
 // encoder
@@ -98,15 +101,18 @@ typedef struct {
 
 // stepper motor
 #define ACCELERATION_CONTROL
+#define STEPPER_POSITION_DECIMATION  5
 //#define VELOCITY_CONTROL // NOT IMPLEMENTED
 //#define POSITION_CONTROL
 #define MAX_SPEED 10000
 #define MIN_SPEED 30
-#define MAX_ACCEL 32767
-#define MAX_DECEL 32767
+#define MAX_ACCEL 32767 //uint16 max
+#define MAX_DECEL 32767 //uint16 max
 #define MAX_TORQUE_CONFIG 800 					// 400 Selected Value for normal control operation
 #define OVERCURRENT_THRESHOLD 2000				// 2000 Selected Value for Integrated Rotary Inverted Pendulum System
 #define STEPS_PER_TURN 3200
+
+#define MAX_DEFLECTION_REV 0.75	// maximum deflection of the rotor before hard stop
 
 
 #define __HAS_OPPOSITE_SIGNS(a, b) (((a) < 0) != ((b) < 0))
@@ -117,6 +123,8 @@ typedef struct {
 
 /* USER CODE BEGIN EFP */
 void Error_Handler(uint16_t error);
+
+extern TIM_HandleTypeDef L6474_Board_Pwm1GetHandle(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

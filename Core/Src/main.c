@@ -49,6 +49,9 @@ TIM_HandleTypeDef htim2;
 UART_HandleTypeDef huart2;
 
 /* USER CODE BEGIN PV */
+
+char uart_buf[UART_BUFFER_SIZE];
+int  uart_buf_len;
 // Global flags
 volatile uint8_t uart_xmit_flag = 0;
 volatile uint8_t uart_err_flag = 0;
@@ -57,11 +60,19 @@ volatile uint8_t spi_err_flag = 0;
 
 static uint8_t spi_rx_buf[SPI_BUFFER_SIZE];
 static uint8_t spi_tx_buf[SPI_BUFFER_SIZE];
-static float recv_number1=0.0;   // stepper motor acceleration command in rad/s^2
-static float recv_number2=0.0;
-static float send_number1;	    // encoder position in revolutions
-static float send_number2;       // stepper motor angle in revolutions
-static float tmp_float;
+static int16_t recv_number1=0;   // stepper motor acceleration command in steps/s^2
+static int16_t recv_number2=0;   // no use for this yet
+static int16_t recv_number3=0;   // no use for this yet
+static int16_t send_number1=0;	   // encoder position in increments
+static int16_t send_number2=0;       // stepper motor angle in microsteps
+static int16_t send_number3=0;	   // stepper motor angle in microsteps per second
+
+static int16_t accel_cmd = 0;
+static int32_t encoder_pos=0;
+static int32_t rotor_pos=0;
+static int16_t rotor_vel=0;
+
+static uint16_t rotor_pos_cnt=0;
 
 static volatile uint16_t gLastError;
 
@@ -92,13 +103,6 @@ L6474_Init_t gL6474InitParams =
     L6474_ALARM_EN_WRONG_NPERF_CMD)    /// Alarm (ALARM_EN register).
 };
 
-L6474_Acceleration_Control_Init_TypeDef gAccelControlInitParams =
-{
-	MIN_SPEED,
-	MAX_SPEED,
-	MAX_ACCEL,
-	T_SAMPLE
-};
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -109,9 +113,11 @@ static void MX_USART2_UART_Init(void);
 static void MX_SPI3_Init(void);
 static void MX_TIM2_Init(void);
 /* USER CODE BEGIN PFP */
-int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim3);
-void rotor_position_read(float * angle);
+uint8_t encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim3);
 static void MyFlagInterruptHandler(void);
+int32_t swap_Endians_32(int32_t value);
+int16_t swap_Endians_16(int16_t value);
+void Debug_TimerStatus(void);
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -127,17 +133,15 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
-  char uart_buf[UART_BUFFER_SIZE];
-  int  uart_buf_len;
-  int encoder_range_error;
+  uint8_t encoder_range_error;
 
-  uint8_t state_spi = 0;
-  uint8_t state_uart = 0;
+  uint8_t state_main = START_STATE_MAIN;
+  //uint32_t state_main_counter = 0; // counts the amount of times the same state was entered
+  uint32_t state_cycle_cnt = 0; // counts the amount of times the circular part of the main state machine is looped
+  static Chrono_TypeDef main_cycletimer= {0,0,0.0}; //Chronometer for circular part of the main state machine
+ // uint8_t state_uart = 0;
   uint32_t err_cnt = 0;
-  uint32_t suc_cnt = 0;
-
-  float velocity_setpoint =0.0;
-  float prev_velocity_setpoint =0.0;
+  uint32_t overtime_cnt = 0;
 
   for(int i=0;i<SPI_BUFFER_SIZE;i++)
   {
@@ -146,7 +150,7 @@ int main(void)
   }
 
   //Declare and initialize encoder
-  Quadrature_Encoder_TypeDef encoder_inst = {0,0,0,0,0,0,0,0,0,0,0,0,FALSE,FALSE,FALSE,COUNTS_PER_TURN};
+  Quadrature_Encoder_TypeDef encoder_inst = {0,0,0,0,0,0,0,0,0,0,0,0,0,FALSE,FALSE,FALSE,COUNTS_PER_TURN};
 
   /* USER CODE END 1 */
 
@@ -185,15 +189,23 @@ int main(void)
   BSP_MotorControl_AttachFlagInterrupt(MyFlagInterruptHandler);
 
   /* Attach the function Error_Handler (defined below) to the error Handler*/
+
+  // wake-up move
+  /*
   BSP_MotorControl_AttachErrorHandler(Error_Handler);
   BSP_MotorControl_SetHome(0, 0);
-  BSP_MotorControl_GoTo(0, 50); // wake-up move
+  BSP_MotorControl_GoTo(0, 100);
   BSP_MotorControl_WaitWhileActive(0);
   BSP_MotorControl_GoTo(0, 0);
   BSP_MotorControl_WaitWhileActive(0);
+  HAL_Delay(2000); // wait for pendulum to settle
+  */
 
   //initialize acceleration control
-  Init_L6472_Acceleration_Control(&gAccelControlInitParams);
+  Init_L6472_Acceleration_Control(&gL6474InitParams, T_SAMPLE);
+
+  //init chronometer
+  Chrono_Init();
 
   /* USER CODE END SysInit */
 
@@ -206,8 +218,8 @@ int main(void)
   /* USER CODE BEGIN 2 */
 
   // Say something
-  //uart_buf_len = sprintf(uart_buf, "Hello world!\r\n");
-  //HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
+  uart_buf_len = sprintf(uart_buf, "Hello world!\r\n");
+  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
 
   // Initialize encoder
   HAL_TIM_Encoder_Start(&htim2, TIM_CHANNEL_ALL);
@@ -227,15 +239,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-	  /*
-	   //test encoder only without SPI
-	  encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
-	  send_number1 = encoder_inst.position;
-	  memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
-	  uart_buf_len = sprintf(uart_buf, "txnumber = %.3f\r\n",send_number1);
-	  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 1000);
-	  HAL_Delay(1000);
-	  */
+
 	  // UART state machine
 	  /*
 		switch (state_uart)
@@ -251,9 +255,9 @@ int main(void)
 		  case 1:
 
 			// Print newline
-				switch(HAL_UART_GetState(&huart2))
+				switch(HAL_UART_Getstate(&huart2))
 				{
-				case HAL_UART_STATE_READY:
+				case HAL_UART_state_READY:
 					uart_buf_len = sprintf(uart_buf, "success: %d, errors: %d, motcmd = %.3f, encoder = %.3f, motfb = %.3f \r\n", (unsigned int)suc_cnt, (unsigned int)err_cnt, recv_number1, send_number1, send_number2);
 					HAL_UART_Transmit_IT(&huart2, (uint8_t *)uart_buf, uart_buf_len);
 
@@ -272,7 +276,7 @@ int main(void)
 				  state_uart = 0;
 				  break;
 			  }
-			  if (uart_err_flag && HAL_UART_GetState(&huart2) == HAL_UART_STATE_READY)
+			  if (uart_err_flag && HAL_UART_Getstate(&huart2) == HAL_UART_state_READY)
 			  {
 			  // Clear flag and try again
 				uart_err_flag = 0;
@@ -285,68 +289,123 @@ int main(void)
 		} //close switch
 		*/
 		//-----------------------------------------------
-		// Finite state machine to allow for non-blocking SPI transmit/receive
-		switch(state_spi)
+		switch(state_main)
 		{
+		// sequential states
+		//-------------------
 		  case 0:
+			  // START state: wait for DMA SPI to have valid date
+			  if (spi_txrx_flag == 1){
+				  state_main=1;
+				  Chrono_Mark(&main_cycletimer);
+				  uart_buf_len = sprintf(uart_buf, "SPI connection established. Starting system... \r\n");
+				  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
+			  }
+			  break;
+		// looping states
+		//-----------------
+		  case 1:
 			// Read encoder
 			encoder_range_error = encoder_position_read(&encoder_inst, &htim2);
-			rotor_position_read(&tmp_float);
+			encoder_pos = encoder_inst.position_steps;
+
+			// read rotor position
+			if (rotor_pos_cnt % STEPPER_POSITION_DECIMATION == 0) {
+				rotor_pos_cnt = 0;
+				rotor_pos = GetPosition_L6472_Acceleration_Control();
+			}
+			rotor_pos_cnt++;
+
+			// read rotor velocity
+			rotor_vel = GetVelocity_L6472_Acceleration_Control();
+
 			__disable_irq();
-			send_number1 = encoder_inst.position;
-			send_number2 = tmp_float;
+			send_number1 = swap_Endians_16((int16_t)encoder_pos);
+			send_number2 = swap_Endians_16((int16_t)rotor_pos);
+			send_number3 = swap_Endians_16(rotor_vel);
 			__enable_irq();
-			state_spi++;
-		  case 1:
-			  // Wait for DMA to finish transmit/receive flag
-				if (spi_txrx_flag){
-					suc_cnt++;
-					spi_txrx_flag = 0;
-					state_spi++;
-				}
-				else
-				{
-					break;
-				}
-			// Go to next state: copy tx/rx and control actions
+
+			state_main++;
+			break;
 		  case 2:
-			  /*
-				// copy new data to SPI buffers
-				HAL_SPI_DMAPause(&hspi3);
-				//__disable_irq();
-				memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
-				memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
-				memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
-				memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
-				//__enable_irq();
-				HAL_SPI_DMAResume(&hspi3);
-				*/
-				state_spi = 0;
+			if (spi_txrx_flag == 1){
+				spi_txrx_flag = 0;
+				state_main=4;
+				__disable_irq();
+				accel_cmd = swap_Endians_16(recv_number1);
+				__enable_irq();
+			}
+			// keep track of waiting time in this state
+			if (Chrono_GetDiffNoMark(&main_cycletimer) > 1.5 * T_SAMPLE) {
+				 overtime_cnt++;
+				 state_main=3;
+				 uart_buf_len = sprintf(uart_buf, "overtime: %" PRIu32 "\r\n", overtime_cnt);
+				 //uart_buf_len = sprintf(uart_buf, "overtime: %u\r\n", overtime_cnt);
+				 HAL_UART_Transmit_IT(&huart2, (uint8_t *)uart_buf, uart_buf_len);
+			 }
+			break;
+
+		  case 3:
+			  // keep periodically reading rotor to check for overrange
+			 if (Chrono_GetDiffNoMark(&main_cycletimer) > 0.05) {
+				 Chrono_Mark(&main_cycletimer);
+				 rotor_pos = GetPosition_L6472_Acceleration_Control();
+			 }
+			if (spi_txrx_flag == 1){
+				spi_txrx_flag = 0;
+				Chrono_Mark(&main_cycletimer);
+				state_main=4;
+				__disable_irq();
+				accel_cmd = swap_Endians_16(recv_number1);
+				__enable_irq();
+			}
+			break;
+		  case 4:
+			  // control actions
 
 #ifdef POSITION_CONTROL
 				//run control if motor inactive or standby
-				if(BSP_MotorControl_GetDeviceState(0) >= 8) {
-					BSP_MotorControl_GoTo(0, (int32_t) (recv_number1 * STEPS_PER_TURN));
+				if(BSP_MotorControl_GetDevicestate(0) >= 8) {
+					BSP_MotorControl_GoTo(0, (int32_t) (accel_cmd));
 				}
 #endif
 #ifdef ACCELERATION_CONTROL
 
-				Integrate_L6472_Acceleration_Control(recv_number1 * STEPS_PER_TURN);
-
-
+				Run_L6472_Acceleration_Control(accel_cmd);
+				//Debug_TimerStatus();
 #endif
+				state_main = 1;
+				state_cycle_cnt++;
+				Chrono_Mark(&main_cycletimer);
 			  break;
+		  case 50:
+			  // Rotor out of safe range
+			  BSP_MotorControl_HardStop(0);
+			  uart_buf_len = sprintf(uart_buf, "Error 50: Rotor out of safe range\r\n");
+			  HAL_UART_Transmit(&huart2, (uint8_t *)uart_buf, uart_buf_len, 100);
+			  state_main=99;
+		  case 99:
+			  ;// do nothting wait state
 		  default:
 			  break;
+		}
+
+		// update ARR of PWM timer when count is close to 0
+		PostProcess_StepClockHandler_L6472_Acceleration_Control();
+
+		// Error checks
+		if (state_main!=99 && (float)labs(rotor_pos) > MAX_DEFLECTION_REV * STEPS_PER_TURN) {
+			// go to error state 50
+			state_main = 50;
 			}
+	  // count any communication errors
+	  if (spi_err_flag)
+	  {
+		err_cnt++;
+		spi_err_flag = 0; // Clear flag
 
-		  // count any communication errors
-		  if (spi_err_flag)
-		  {
-		  	err_cnt++;
-			spi_err_flag = 0; // Clear flag
+	   }
 
-		   }
   } // close while(1)
   /* USER CODE END 3 */
 }
@@ -583,30 +642,35 @@ static void MX_GPIO_Init(void)
  */
 
 
-int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim) {
+uint8_t encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef *htim) {
 
 	int range_error = 0;
-	encoder->cnt3 = __HAL_TIM_GET_COUNTER(htim);
 
-	if (encoder->cnt3 >= 2147483648) {
-		encoder->position_steps = (int) (encoder->cnt3);
-		encoder->position_steps = encoder->position_steps - 4294967297;
-	} else {
-		encoder->position_steps = (int) (encoder->cnt3);
-	}
+	 // Read current counter value
+	    encoder->cnt3 = __HAL_TIM_GET_COUNTER(htim);
 
-	if (encoder->position_steps <= -2147483648) {
-		range_error = -1;
-		encoder->position_steps = -2147483648;
-	}
-	if (encoder->position_steps >= 2147483648) {
-		range_error = 1;
-		encoder->position_steps = 2147483648;
-	}
-	// Subtract zeroing offset
-	encoder->position_steps = encoder->position_steps - encoder->position_init;
-	// calculate in position in revolutions
-	encoder->position = (float) encoder->position_steps / (float) encoder->counts_per_turn;
+	    // Calculate delta explicitly with rollover handling
+	    int32_t delta = (int32_t)(encoder->cnt3 - encoder->previous_cnt3);
+
+	    encoder->position_steps += delta;
+
+	    // Update previous counter
+	    encoder->previous_cnt3 = encoder->cnt3;
+
+	    // Handle range limits
+	    if (encoder->position_steps < INT32_MIN) {
+	        range_error = -1;
+	        encoder->position_steps = INT32_MIN;
+	    } else if (encoder->position_steps > INT32_MAX) {
+	        range_error = 1;
+	        encoder->position_steps = INT32_MAX;
+	    }
+
+	    // Subtract zeroing offset
+	    encoder->position_steps -= encoder->position_init;
+
+	    // Calculate position in revolutions
+	    encoder->position = (float)encoder->position_steps / (float)encoder->counts_per_turn;
 
 	/*
 	 *  Detect if we passed the bottom, then re-arm peak flag
@@ -623,12 +687,12 @@ int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef
 	if (!encoder->peaked) // We don't need to evaluate anymore if we hit a maximum when we're still in downward motion and didn't cross the minimum
 	{
 		// Add global maximum
-		if (abs(encoder->position_steps) >= abs(encoder->global_max_position))
+		if (labs(encoder->position_steps) >= labs(encoder->global_max_position))
 		{
-			encoder->global_max_position = encoder->position;
+			encoder->global_max_position = encoder->position_steps;
 		}
 		// Check if new maximum
-		if (abs(encoder->position_steps) >= abs(encoder->max_position))
+		if (labs(encoder->position_steps) >= labs(encoder->max_position))
 		{
 			encoder->max_position = encoder->position_steps;
 		}
@@ -646,16 +710,6 @@ int encoder_position_read(Quadrature_Encoder_TypeDef *encoder, TIM_HandleTypeDef
 	return range_error;
 }
 
-void rotor_position_read(float * angle) {
-	// get current step count
-	int32_t stepcount;
-
-	stepcount = BSP_MotorControl_GetPosition(0);
-	*angle = (float) stepcount / (float) STEPS_PER_TURN;
-}
-
-
-
 __STATIC_INLINE void DWT_Delay_us(volatile uint32_t microseconds)
 {
 	uint32_t clk_cycle_start = DWT->CYCCNT;
@@ -672,27 +726,107 @@ __STATIC_INLINE void DWT_Delay_until_cycle(volatile uint32_t cycle)
 	while (DWT->CYCCNT < cycle);
 }
 
+int32_t swap_Endians_32(int32_t value)
+{
+
+	int32_t leftmost_byte;
+	int32_t left_middle_byle;
+	int32_t right_middle_byte;
+	int32_t rightmost_byte;
+
+	int32_t result;
+
+    leftmost_byte = (value & 0x000000FF) >> 0;
+    left_middle_byle = (value & 0x0000FF00) >> 8;
+    right_middle_byte = (value & 0x00FF0000) >> 16;
+    rightmost_byte = (value & 0xFF000000) >> 24;
+    leftmost_byte <<= 24;
+    left_middle_byle <<= 16;
+    right_middle_byte <<= 8;
+    rightmost_byte <<= 0;
+
+    result = (leftmost_byte | left_middle_byle
+              | right_middle_byte | rightmost_byte);
+
+    return result;
+}
+
+int16_t swap_Endians_16(int16_t value)
+{
+
+	int16_t leftmost_byte;
+	int16_t rightmost_byte;
+
+	int16_t result;
+
+    leftmost_byte = (value & 0x00FF) >> 0;
+    rightmost_byte = (value & 0xFF00) >> 8;
+    leftmost_byte <<= 8;
+    rightmost_byte <<= 0;
+
+    result = (leftmost_byte | rightmost_byte);
+
+    return result;
+}
+
+void Debug_TimerStatus(void) {
+    static uint32_t lastDebugTime = 0; // Timestamp of last debug print
+    uint32_t currentTime = HAL_GetTick(); // Current system time in milliseconds
+    TIM_HandleTypeDef hTimPwm1 = L6474_Board_Pwm1GetHandle();
+
+   // Print debug information at most every 500 ms
+   if ((currentTime - lastDebugTime) >= 500 && uart_xmit_flag == 1) {
+	   uint32_t CNT = hTimPwm1.Instance->CNT;
+	   uint32_t ARR = hTimPwm1.Instance->ARR;
+	   uint32_t PSC = hTimPwm1.Instance->PSC;
+	   uint32_t SR = hTimPwm1.Instance->SR;
+	   uint32_t DIER = hTimPwm1.Instance->DIER;
+
+	   // Combine all debug information into a single string
+	   int uart_buf_len = sprintf(
+		   uart_buf,
+		   "==== Timer Debug Info ====\r\n"
+		   "CNT: %lu, ARR: %lu, PSC: %lu, SR: 0x%lX, DIER: 0x%lX\r\n"
+		   "==========================\r\n",
+		   CNT, ARR, PSC, SR, DIER
+	   );
+
+	   // Initiate non-blocking UART transmission
+	   if (HAL_UART_Transmit_IT(&huart2, (uint8_t *)uart_buf, uart_buf_len) == HAL_OK) {
+		   uart_xmit_flag = 0; // Mark UART as busy
+	   }
+
+	   lastDebugTime = currentTime; // Update the timestamp
+   }
+}
+
+
 //------------------------------------------------------
 // Callbacks
 
 void HAL_SPI_TxRxCpltCallback (SPI_HandleTypeDef * hspi)
 {
 	spi_txrx_flag = 1;
-	memcpy(spi_tx_buf, &send_number1 , sizeof(send_number1));
-	memcpy(&spi_tx_buf[4], &send_number2 , sizeof(send_number2));
-	memcpy(&recv_number1, spi_rx_buf, sizeof(recv_number1));
-	memcpy(&recv_number2, &spi_rx_buf[4], sizeof(recv_number2));
+	// copy send_numberx to tx buffer
+	memcpy(&spi_tx_buf[0], &send_number1 , 2);
+	memcpy(&spi_tx_buf[2], &send_number2 , 2);
+	memcpy(&spi_tx_buf[4], &send_number3 , 2);
+	// copy rx buffer to recv_numberx
+	memcpy(&recv_number1, &spi_rx_buf[0], 2);
+	memcpy(&recv_number2, &spi_rx_buf[2], 2);
+	memcpy(&recv_number3, &spi_rx_buf[4], 2);
+
 }
 
 void HAL_SPI_ErrorCallback (SPI_HandleTypeDef * hspi)
 {
-  // Set CS pin to high and raise flag
+  // raise flag
   spi_err_flag = 1;
 }
 
 void HAL_UART_TxCpltCallback (UART_HandleTypeDef * huart)
 {
-  // Set CS pin to high and raise flag
+  // raise flag
   uart_xmit_flag = 1;
 }
 

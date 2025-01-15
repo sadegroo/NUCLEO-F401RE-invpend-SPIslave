@@ -56,6 +56,7 @@ extern DMA_HandleTypeDef hdma_spi3_tx;
 /* USER CODE BEGIN ExternalFunctions */
 extern void BSP_MotorControl_StepClockHandler(uint8_t deviceId);
 extern void BSP_MotorControl_FlagInterruptHandler(void);
+extern void StepClockHandler_L6472_Acceleration_Control(void); // for acceleration control of device 0
 /* USER CODE END ExternalFunctions */
 
 /* USER CODE BEGIN 0 */
@@ -498,9 +499,11 @@ void HAL_TIM_PWM_PulseFinishedCallback(TIM_HandleTypeDef *htim)
   {
     if (BSP_MotorControl_GetDeviceState(0) != INACTIVE)
     {
+#ifndef ACCELERATION_CONTROL
       BSP_MotorControl_StepClockHandler(0);
+#endif
 #ifdef ACCELERATION_CONTROL
-      Update_L6472_Acceleration_Control();
+      StepClockHandler_L6472_Acceleration_Control(); // picks standard or alt stepclockhandler
 #endif
     }
   }

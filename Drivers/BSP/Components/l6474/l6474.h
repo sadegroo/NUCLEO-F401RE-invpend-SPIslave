@@ -31,6 +31,7 @@
 /* Includes ------------------------------------------------------------------*/
 #include "l6474_target_config.h"
 #include "motor.h"   
+#include <stdlib.h>
    
 /** @addtogroup BSP
   * @{
@@ -548,7 +549,9 @@ typedef struct {
     /// min speed in pps
     volatile uint16_t minSpeed;      
     /// current speed in pps    
-    volatile uint16_t speed;         
+    volatile uint16_t speed;
+    // current speed accumulator for StepClockHandler_alt, in pps
+    volatile uint16_t speed_accu;
     
     /// command under execution
     volatile deviceCommand_t commandExecuted; 
@@ -654,6 +657,9 @@ extern void L6474_Board_GpioInit(uint8_t deviceId);
 extern uint32_t L6474_Board_Pwm1GetCounter(void);
 ///Set PWM1 period
 extern void L6474_Board_Pwm1SetPeriod(uint32_t period);
+extern void L6474_Board_Pwm1SetAutoReload(uint32_t period);
+extern void L6474_Board_Pwm1SetCompare(uint32_t period);
+extern uint8_t L6474_Board_Pwm1StartIT(void);
 ///Set PWM1 frequency and start it
 extern void L6474_Board_Pwm1SetFreq(uint16_t newFreq);
 ///Set PWM2 frequency and start it  

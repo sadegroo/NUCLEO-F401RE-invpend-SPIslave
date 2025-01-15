@@ -101,6 +101,7 @@ void L6474_SetDeviceParamsToPredefinedValues(uint8_t deviceId);
 void L6474_SetDeviceParamsToGivenValues(uint8_t deviceId, L6474_Init_t *pInitPrm);
 void L6474_StartMovement(uint8_t deviceId);
 void L6474_StepClockHandler(uint8_t deviceId);  
+uint16_t L6474_StepClockHandler_alt(uint8_t deviceId, int16_t acceleration);
 uint8_t L6474_Ocd_Th_to_Par(float Tval);
 float L6474_Ocd_Par_to_Th(uint8_t Par);
 uint8_t L6474_Tval_Current_to_Par(float Tval);
@@ -803,6 +804,7 @@ void L6474_HardStop(uint8_t deviceId)
     devicePrm[deviceId].commandExecuted = NO_CMD;
     devicePrm[deviceId].stepsToTake = MAX_STEPS;  
     devicePrm[deviceId].speed = 0;
+    devicePrm[deviceId].speed_accu = 0;
   }
   else
   {
@@ -829,6 +831,7 @@ void L6474_HizStop(uint8_t deviceId)
   devicePrm[deviceId].commandExecuted = NO_CMD;
   devicePrm[deviceId].stepsToTake = MAX_STEPS;  
   devicePrm[deviceId].speed = 0;
+  devicePrm[deviceId].speed_accu = 0;
 }
 
 /******************************************************//**
@@ -1527,6 +1530,7 @@ void L6474_SetDeviceParamsToGivenValues(uint8_t deviceId, L6474_Init_t *pInitPrm
   devicePrm[deviceId].startDecPos = 0;
   devicePrm[deviceId].stepsToTake = 0;
   devicePrm[deviceId].speed = 0;
+  devicePrm[deviceId].speed_accu = 0;
   devicePrm[deviceId].commandExecuted = NO_CMD;
   devicePrm[deviceId].direction = FORWARD;
   devicePrm[deviceId].motionState = INACTIVE;  
@@ -1554,6 +1558,7 @@ void L6474_SetDeviceParamsToPredefinedValues(uint8_t deviceId)
   devicePrm[deviceId].startDecPos = 0;
   devicePrm[deviceId].stepsToTake = 0;
   devicePrm[deviceId].speed = 0;
+  devicePrm[deviceId].speed_accu = 0;
   devicePrm[deviceId].commandExecuted = NO_CMD;
   devicePrm[deviceId].direction = FORWARD;
   devicePrm[deviceId].motionState = INACTIVE;
@@ -1775,6 +1780,7 @@ void L6474_StartMovement(uint8_t deviceId)
     devicePrm[deviceId].motionState = DECELERATING;    
   }
   devicePrm[deviceId].accu = 0;
+  devicePrm[deviceId].speed_accu = 0;
   devicePrm[deviceId].relativePos = 0;
   L6474_ApplySpeed(deviceId, devicePrm[deviceId].minSpeed);
 }
@@ -1916,6 +1922,131 @@ void L6474_StepClockHandler(uint8_t deviceId)
   }  
   /* Set isr flag */
   isrFlag = FALSE;
+}
+
+/******************************************************//**
+ * @brief  Handles the device state machine at each step ACCELERATION CONTROL
+ * @param[in] deviceId (from 0 to 2)
+ * @retval None
+ * @note Must only be called by the timer ISR
+ **********************************************************/
+uint16_t L6474_StepClockHandler_alt(uint8_t deviceId, int16_t acceleration)
+{
+  /* Set isr flag */
+  isrFlag = TRUE;
+
+  uint32_t acc = (labs((int32_t)acceleration) << 16);
+  uint16_t speed_accu = devicePrm[deviceId].speed_accu;
+  uint16_t speed_divider = (speed_accu < devicePrm[deviceId].minSpeed) ? devicePrm[deviceId].minSpeed : speed_accu;
+
+  //if (speed_accu == 0) speed_accu = devicePrm[deviceId].speed;
+
+  if (speed_accu < devicePrm[deviceId].maxSpeed && ((devicePrm[deviceId].direction == FORWARD && acceleration > 0)||((devicePrm[deviceId].direction == BACKWARD && acceleration < 0)))) {
+ 	  devicePrm[deviceId].motionState = ACCELERATING;
+   } else if ((devicePrm[deviceId].direction == FORWARD && acceleration < 0)||((devicePrm[deviceId].direction == BACKWARD && acceleration > 0))) {
+ 	  devicePrm[deviceId].motionState = DECELERATING;
+   } else {
+ 	  devicePrm[deviceId].motionState = STEADY;
+   }
+
+  switch (devicePrm[deviceId].motionState)
+  {
+    case ACCELERATING:
+    {
+		  bool speedUpdated = FALSE;
+
+		  devicePrm[deviceId].accu += acc / speed_divider;
+		  while (devicePrm[deviceId].accu >= (0X10000L))
+		  {
+			devicePrm[deviceId].accu -= (0X10000L);
+			speed_accu +=1;
+			speedUpdated = TRUE;
+		  }
+
+		  if (speedUpdated)
+		  {
+			if (speed_accu > devicePrm[deviceId].maxSpeed)
+			{
+			  speed_accu = devicePrm[deviceId].maxSpeed;
+			  devicePrm[deviceId].speed = speed_accu;
+			} else if (speed_accu > (devicePrm[deviceId].minSpeed))
+			{
+			  devicePrm[deviceId].speed = speed_accu;
+			} else
+			{
+				devicePrm[deviceId].speed = devicePrm[deviceId].minSpeed;
+			}
+			//L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed);
+			devicePrm[deviceId].speed_accu = speed_accu;
+		  }
+        break;
+    }
+    case STEADY:
+    {
+      //L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed);
+      break;
+    }
+    case DECELERATING:
+    {
+
+		bool speedUpdated = FALSE;
+		bool directionChanged = FALSE;
+
+	  devicePrm[deviceId].accu += acc / speed_divider;
+	  while (devicePrm[deviceId].accu >= (0X10000L))
+	  {
+		devicePrm[deviceId].accu -= (0X10000L);
+		if (speed_accu > 0 && !(directionChanged))
+		{
+			speed_accu -=1;
+			if (speed_accu == 0){
+				// Direction change
+				directionChanged = TRUE;
+				  if (devicePrm[deviceId].direction == FORWARD)
+				  {
+					  L6474_Board_SetDirectionGpio(0, BACKWARD);
+					  devicePrm[deviceId].direction = BACKWARD;
+				  }
+				  else
+				  {
+					 L6474_Board_SetDirectionGpio(0, FORWARD);
+					 devicePrm[deviceId].direction = FORWARD;
+				  }
+			}
+		} else
+		{
+			speed_accu +=1;
+
+		}
+		speedUpdated = TRUE;
+
+	  }
+
+	  if (speedUpdated)
+	  {
+		if (speed_accu > (devicePrm[deviceId].minSpeed))
+		{
+		  devicePrm[deviceId].speed = speed_accu;
+		} else
+		{
+			devicePrm[deviceId].speed = devicePrm[deviceId].minSpeed;
+		}
+		//L6474_ApplySpeed(deviceId, devicePrm[deviceId].speed);
+		devicePrm[deviceId].speed_accu = speed_accu;
+
+	  }
+      break;
+    }
+    default:
+    {
+      break;
+    }
+  }
+
+  /* Set isr flag */
+  isrFlag = FALSE;
+
+  return devicePrm[deviceId].speed;
 }
 
 /******************************************************//**
